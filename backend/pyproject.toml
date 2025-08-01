@@ -1,0 +1,96 @@
+[project]
+name = "crewaiplatform"
+version = "0.1.0"
+description = "基于Django的RBAC后端API平台，支持PostgreSQL，提供完整的用户权限管理功能"
+authors = [
+  { name = "CrewAI Team", email = "team@crewai-platform.com" }
+]
+requires-python = ">=3.8"
+dependencies = [
+    # Django核心框架
+    "Django>=4.2,<5.0",
+    
+    # REST API框架
+    "djangorestframework>=3.14.0",
+    "djangorestframework-simplejwt>=5.2.0",
+    
+    # 数据库
+    "psycopg2-binary>=2.9.0",  # PostgreSQL适配器
+    "dj-database-url>=2.0.0",  # 数据库URL解析（用于云部署）
+    
+    # 跨域支持
+    "django-cors-headers>=4.0.0",
+    
+    # 缓存支持（可选）
+    "django-redis>=5.2.0",
+    
+    # 环境变量管理
+    "python-decouple>=3.6",
+    
+    # 工具库
+    "Pillow>=9.0.0",  # 图像处理
+]
+
+# 开发依赖
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-django>=4.5.0",
+    "pytest-cov>=4.0.0",
+    "black>=22.0.0",  # 代码格式化
+    "flake8>=4.0.0",  # 代码检查
+    "isort>=5.10.0",  # 导入排序
+    "pre-commit>=2.17.0",  # Git钩子
+    "factory-boy>=3.2.0",  # 测试数据工厂
+]
+
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["crewaiplatform*"]
+
+# 黑色代码格式化配置
+[tool.black]
+line-length = 88
+target-version = ['py38']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # 排除的目录
+  migrations
+  | venv
+  | env
+  | build
+  | dist
+)/
+'''
+
+# isort配置
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+known_django = "django"
+sections = ["FUTURE", "STDLIB", "DJANGO", "THIRDPARTY", "FIRSTPARTY", "LOCALFOLDER"]
+
+# pytest配置
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "crewaiplatform.settings"
+python_files = ["tests.py", "test_*.py", "*_tests.py"]
+addopts = "--cov=. --cov-report=html --cov-report=term-missing"
+
+# 覆盖率配置
+[tool.coverage.run]
+source = "."
+omit = [
+    "*/migrations/*",
+    "*/venv/*",
+    "*/env/*",
+    "manage.py",
+    "*/settings/*",
+    "*/tests/*",
+    "*/__pycache__/*",
+] 
