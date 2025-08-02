@@ -17,3 +17,15 @@ crewaiplatform.egg-info/requires.txt
 crewaiplatform.egg-info/top_level.txt
 crewaiplatform/migrations/0001_initial.py
 crewaiplatform/migrations/__init__.py
+crewaiplatform/models/__init__.py
+crewaiplatform/models/permission.py
+crewaiplatform/models/role.py
+crewaiplatform/models/role_permission.py
+crewaiplatform/models/user.py
+crewaiplatform/models/user_role.py
+crewaiplatform/services/__init__.py
+crewaiplatform/services/auth_service.py
+crewaiplatform/services/permission_service.py
+crewaiplatform/services/rbac_service.py
+crewaiplatform/services/role_service.py
+crewaiplatform/services/user_service.py

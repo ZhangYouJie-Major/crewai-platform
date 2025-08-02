@@ -13,7 +13,10 @@ echo "========================================="
 cd "$(dirname "$0")"
 
 # 检查虚拟环境（可选）
-if [ -d "venv" ]; then
+if [ -d ".venv" ]; then
+    echo "激活虚拟环境..."
+    source .venv/bin/activate
+elif [ -d "venv" ]; then
     echo "激活虚拟环境..."
     source venv/bin/activate
 fi
