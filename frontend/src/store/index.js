@@ -1,5 +1,5 @@
 import { reactive } from 'vue'
-import ApiService from '../services/api'
+import api from '../services/api'
 
 /**
  * 应用状态管理 - 简化版本
@@ -34,7 +34,7 @@ const userActions = {
   async login(credentials) {
     try {
       state.app.loading = true
-      const response = await ApiService.auth.login(credentials)
+      const response = await api.login(credentials)
       const { access, refresh, user } = response.data
       
       localStorage.setItem('access', access)
@@ -57,7 +57,7 @@ const userActions = {
     try {
       const refreshToken = localStorage.getItem('refresh')
       if (refreshToken) {
-        await ApiService.auth.logout(refreshToken)
+        await api.logout(refreshToken)
       }
     } catch (error) {
       console.error('登出请求失败:', error)
@@ -69,7 +69,7 @@ const userActions = {
   async register(userData) {
     try {
       state.app.loading = true
-      const response = await ApiService.auth.register(userData)
+      const response = await api.register(userData)
       const { access, refresh, user } = response.data
       
       localStorage.setItem('access', access)
@@ -89,7 +89,7 @@ const userActions = {
 
   async fetchCurrentUser() {
     try {
-      const response = await ApiService.auth.getCurrentUser()
+      const response = await api.getCurrentUser()
       state.user.info = response.data
       state.user.isLoggedIn = true
       state.user.roles = response.data.roles || []
@@ -124,7 +124,7 @@ const cacheActions = {
     }
     
     try {
-      const response = await ApiService.dashboard.getStats()
+      const response = await api.getDashboardStats()
       state.cache.dashboardStats = response.data
       return state.cache.dashboardStats
     } catch (error) {
@@ -139,7 +139,7 @@ const cacheActions = {
     }
     
     try {
-      const response = await ApiService.users.getList()
+      const response = await api.getUsers()
       state.cache.users = response.data.results || response.data
       return state.cache.users
     } catch (error) {
@@ -154,7 +154,7 @@ const cacheActions = {
     }
     
     try {
-      const response = await ApiService.roles.getList()
+      const response = await api.getRoles()
       state.cache.roles = response.data.results || response.data
       return state.cache.roles
     } catch (error) {
@@ -169,7 +169,7 @@ const cacheActions = {
     }
     
     try {
-      const response = await ApiService.permissions.getList()
+      const response = await api.getPermissions()
       state.cache.permissions = response.data.results || response.data
       return state.cache.permissions
     } catch (error) {
@@ -203,10 +203,14 @@ const appActions = {
     if (token) {
       try {
         await userActions.fetchCurrentUser()
+        console.log('应用初始化成功，用户已登录')
       } catch (error) {
-        console.error('应用初始化失败:', error)
+        console.warn('应用初始化时获取用户信息失败，清除本地token:', error.message)
+        // 静默清理无效的token，不抛出错误
         userActions.clearUserData()
       }
+    } else {
+      console.log('应用初始化完成，用户未登录')
     }
   }
 }

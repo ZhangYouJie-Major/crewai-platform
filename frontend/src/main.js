@@ -9,6 +9,7 @@ import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
 import App from './App.vue'
 import router from './router'
 import store from './store'
+import api from './services/api'
 
 /**
  * 应用初始化
@@ -35,6 +36,7 @@ app.provide('store', store)
 
 // 全局属性和方法
 app.config.globalProperties.$store = store
+app.config.globalProperties.$api = api
 
 // 全局错误处理
 app.config.errorHandler = (err, instance, info) => {

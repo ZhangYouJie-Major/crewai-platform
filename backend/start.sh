@@ -3,8 +3,6 @@
 # CrewAI Platform 后端启动脚本
 # 用于日常开发中快速启动Django服务器
 
-set -e  # 遇到错误立即退出
-
 echo "========================================="
 echo "启动CrewAI Platform后端服务..."
 echo "========================================="
@@ -30,10 +28,15 @@ fi
 
 # 快速数据库检查
 echo "检查数据库连接..."
-if ! python manage.py check --database default 2>/dev/null; then
+CHECK_OUTPUT=$(python manage.py check --database default 2>&1)
+CHECK_EXIT_CODE=$?
+if [ $CHECK_EXIT_CODE -eq 0 ]; then
+    echo "数据库连接正常"
+else
+    echo "数据库检查输出: $CHECK_OUTPUT"
     echo "数据库连接失败，请检查数据库配置"
     echo "如需初始化数据库，请运行: ./init_backend.sh"
-    exit 1
+    # 不退出，继续尝试启动
 fi
 
 # 检查是否需要迁移

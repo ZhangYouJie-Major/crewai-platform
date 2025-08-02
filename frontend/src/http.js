@@ -25,6 +25,9 @@ http.interceptors.request.use(
     if (access) {
       // 在请求头中添加Authorization
       config.headers['Authorization'] = `Bearer ${access}`
+      console.log('添加认证头:', `Bearer ${access.substring(0, 20)}...`)
+    } else {
+      console.warn('没有access token')
     }
     
     // 可以在这里添加其他全局请求配置
@@ -50,7 +53,12 @@ http.interceptors.response.use(
   async error => {
     const { response, config } = error
     
-    console.error('响应错误:', error)
+    console.error('响应错误:', {
+      status: response?.status,
+      url: config?.url,
+      error: error.message,
+      responseData: response?.data
+    })
     
     if (response) {
       const { status } = response
@@ -58,6 +66,7 @@ http.interceptors.response.use(
       switch (status) {
         case 401:
           // 未授权，可能是token过期
+          console.log('收到401响应，处理未授权错误')
           await handleUnauthorized()
           break
           
@@ -94,28 +103,45 @@ http.interceptors.response.use(
  * 处理401未授权错误
  * 尝试使用refresh token刷新访问令牌，如果失败则跳转到登录页
  */
+// 防止重复刷新token
+let isRefreshing = false
+
 async function handleUnauthorized() {
+  // 防止多个请求同时触发token刷新
+  if (isRefreshing) {
+    console.log('Token刷新进行中，等待...')
+    return
+  }
+  
   const refreshToken = localStorage.getItem('refresh')
   
   if (refreshToken) {
     try {
+      isRefreshing = true
+      console.log('尝试刷新token...')
+      
       // 尝试刷新token
-      const response = await axios.post('/api/auth/refresh/', {
+      const response = await axios.post(`${import.meta.env.VITE_API_BASE_URL || '/api'}/auth/refresh/`, {
         refresh: refreshToken
       })
       
       const { access } = response.data
       localStorage.setItem('access', access)
       
+      console.log('Token刷新成功')
       ElMessage.success('登录状态已刷新')
-      // 可以考虑重新发送失败的请求
+      
+      // 不要立即重新加载页面，让用户手动刷新或重试操作
       
     } catch (refreshError) {
       console.error('刷新token失败:', refreshError)
       clearAuthData()
       redirectToLogin()
+    } finally {
+      isRefreshing = false
     }
   } else {
+    console.log('没有refresh token，跳转到登录页')
     clearAuthData()
     redirectToLogin()
   }
@@ -136,8 +162,19 @@ function redirectToLogin() {
   ElMessage.warning('登录状态已过期，请重新登录')
   
   // 避免在登录页面重复跳转
-  if (router.currentRoute.value.path !== '/login') {
-    router.push('/login')
+  const currentPath = window.location.pathname
+  console.log('准备跳转到登录页，当前路径:', currentPath)
+  
+  if (currentPath !== '/login') {
+    console.log('执行跳转到登录页')
+    if (router) {
+      router.push('/login')
+    } else {
+      // 如果路由不可用，直接修改地址
+      window.location.href = '/login'
+    }
+  } else {
+    console.log('已在登录页，不需要跳转')
   }
 }
 

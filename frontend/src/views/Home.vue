@@ -36,22 +36,62 @@
               <el-icon><House /></el-icon>
               <span>仪表盘</span>
             </el-menu-item>
-            <el-menu-item index="/users">
-              <el-icon><User /></el-icon>
-              <span>用户管理</span>
-            </el-menu-item>
-            <el-menu-item index="/roles">
-              <el-icon><Avatar /></el-icon>
-              <span>角色管理</span>
-            </el-menu-item>
-            <el-menu-item index="/permissions">
-              <el-icon><Key /></el-icon>
-              <span>权限管理</span>
-            </el-menu-item>
-            <el-menu-item index="/rbac">
-              <el-icon><Setting /></el-icon>
-              <span>角色权限</span>
-            </el-menu-item>
+            
+            <!-- RBAC 权限管理 -->
+            <el-sub-menu index="rbac">
+              <template #title>
+                <el-icon><Lock /></el-icon>
+                <span>权限管理</span>
+              </template>
+              <el-menu-item index="/users">
+                <el-icon><User /></el-icon>
+                <span>用户管理</span>
+              </el-menu-item>
+              <el-menu-item index="/roles">
+                <el-icon><Avatar /></el-icon>
+                <span>角色管理</span>
+              </el-menu-item>
+              <el-menu-item index="/permissions">
+                <el-icon><Key /></el-icon>
+                <span>权限管理</span>
+              </el-menu-item>
+              <el-menu-item index="/rbac">
+                <el-icon><Setting /></el-icon>
+                <span>角色权限</span>
+              </el-menu-item>
+            </el-sub-menu>
+            
+            <!-- CrewAI 集成 -->
+            <el-sub-menu index="crewai">
+              <template #title>
+                <el-icon><Cpu /></el-icon>
+                <span>CrewAI 集成</span>
+              </template>
+              <el-menu-item index="/llm-models">
+                <el-icon><Connection /></el-icon>
+                <span>LLM 模型配置</span>
+              </el-menu-item>
+              <el-menu-item index="/agents">
+                <el-icon><Monitor /></el-icon>
+                <span>Agent 管理</span>
+              </el-menu-item>
+              <el-menu-item index="/mcp-tools">
+                <el-icon><Tools /></el-icon>
+                <span>MCP工具管理</span>
+              </el-menu-item>
+            </el-sub-menu>
+            
+            <!-- 基础配置 -->
+            <el-sub-menu index="config">
+              <template #title>
+                <el-icon><Setting /></el-icon>
+                <span>基础配置</span>
+              </template>
+              <el-menu-item index="/dictionaries">
+                <el-icon><Document /></el-icon>
+                <span>字典管理</span>
+              </el-menu-item>
+            </el-sub-menu>
           </el-menu>
         </el-aside>
         
@@ -75,7 +115,13 @@ import {
   ArrowDown,
   Avatar,
   Key,
-  Setting
+  Setting,
+  Lock,
+  Cpu,
+  Connection,
+  Monitor,
+  Document,
+  Tools
 } from '@element-plus/icons-vue'
 
 const router = useRouter()
@@ -94,8 +140,14 @@ const fetchUserInfo = async () => {
   try {
     const { data } = await http.get('/auth/me/')
     userInfo.value = data
+    console.log('用户信息获取成功:', data)
   } catch (error) {
-    ElMessage.error('获取用户信息失败')
+    console.log('获取用户信息失败，可能是token问题:', error.response?.status)
+    // 不显示错误消息，让HTTP拦截器处理认证问题
+    // 只有在非401错误时才显示错误消息
+    if (error.response?.status !== 401) {
+      ElMessage.error('获取用户信息失败')
+    }
   }
 }
 
