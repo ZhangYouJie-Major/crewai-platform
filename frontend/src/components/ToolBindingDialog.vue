@@ -317,15 +317,24 @@ const performHealthCheck = async () => {
           message: response.data.message
         })
       } catch (error) {
+        console.error(`健康检查失败: ${binding.tool}`, error)
         healthResults.value.push({
           tool_id: binding.tool,
           status: 'error',
-          message: error.message || '健康检查失败'
+          message: error.response?.data?.message || error.message || '健康检查失败'
         })
       }
     }
 
-    ElMessage.success('健康检查完成')
+    console.log(healthResults.value)
+    const healthyCount = healthResults.value.filter(r => r.status === 'healthy').length
+    const totalCount = healthResults.value.length
+    
+    if (healthyCount === totalCount) {
+      ElMessage.success(`健康检查完成，所有工具 (${totalCount}) 运行正常`)
+    } else {
+      ElMessage.warning(`健康检查完成，${healthyCount}/${totalCount} 个工具正常`)
+    }
   } catch (error) {
     console.error('健康检查失败:', error)
     ElMessage.error('健康检查失败')

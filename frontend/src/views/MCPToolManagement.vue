@@ -412,10 +412,10 @@ const handleTestTool = async (tool) => {
   try {
     loading.value = true
     const response = await api.healthCheckMCPTool(tool.id)
-    if (response.data.healthy) {
+    if (response.data.success) {
       ElMessage.success('工具健康检查通过')
     } else {
-      ElMessage.warning('工具健康检查失败')
+      ElMessage.warning(`工具健康检查失败: ${response.data.message}`)
     }
     await fetchTools() // 刷新状态
   } catch (error) {

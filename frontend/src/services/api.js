@@ -72,7 +72,6 @@ class ApiService {
     delete: (id) => http.delete(`/llm-models/${id}/`),
     testConnection: (modelData) => http.post('/llm-models/test_connection/', modelData),
     validateConnection: (id) => http.post(`/llm-models/${id}/validate_connection/`),
-    getModels: (id) => http.get(`/llm-models/${id}/models/`),
     batchValidate: () => http.post('/llm-models/batch_validate/'),
     getAvailable: () => http.get('/llm-models/available/'),
     getStats: () => http.get('/llm-models/stats/')
@@ -203,7 +202,6 @@ const api = {
   deleteLLMModel: ApiService.llmModels.delete,
   testLLMModelConnection: ApiService.llmModels.testConnection,
   validateLLMModelConnection: ApiService.llmModels.validateConnection,
-  getLLMModelModels: ApiService.llmModels.getModels,
   batchValidateLLMModels: ApiService.llmModels.batchValidate,
   getAvailableLLMModels: ApiService.llmModels.getAvailable,
   getLLMModelStats: ApiService.llmModels.getStats,

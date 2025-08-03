@@ -238,13 +238,8 @@ export default {
       return new Date(dateString).toLocaleDateString()
     },
 
-    async handleTest() {
-      this.loading.test = true
-      try {
-        this.$emit('test', this.tool)
-      } finally {
-        this.loading.test = false
-      }
+    handleTest() {
+      this.$emit('test', this.tool)
     },
 
     handleCall() {

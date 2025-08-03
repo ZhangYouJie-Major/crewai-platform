@@ -41,6 +41,37 @@ class LLMModelViewSet(viewsets.ModelViewSet):
         
         return queryset
     
+    def destroy(self, request, *args, **kwargs):
+        """删除LLM模型"""
+        try:
+            from ..services import LLMService
+            
+            model_id = kwargs.get('pk')
+            success, message = LLMService.delete_llm_model(int(model_id))
+            
+            if success:
+                return Response({
+                    'success': True,
+                    'message': message
+                }, status=status.HTTP_200_OK)
+            else:
+                return Response({
+                    'success': False,
+                    'error': message
+                }, status=status.HTTP_400_BAD_REQUEST)
+                
+        except ValueError:
+            return Response({
+                'success': False,
+                'error': '无效的模型ID'
+            }, status=status.HTTP_400_BAD_REQUEST)
+            
+        except Exception as e:
+            return Response({
+                'success': False,
+                'error': f'删除操作失败: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
     @action(detail=True, methods=['post'])
     def validate_connection(self, request, pk=None):
         """验证LLM模型连接"""
@@ -61,33 +92,6 @@ class LLMModelViewSet(viewsets.ModelViewSet):
                 'message': str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
-    @action(detail=True, methods=['get'])
-    def models(self, request, pk=None):
-        """获取提供商可用的模型列表"""
-        try:
-            from ..services import LLMService
-            
-            model = self.get_object()
-            success, message, models_list = LLMService.get_available_models_list(model.id)
-            
-            if success:
-                return Response({
-                    'success': True,
-                    'models': models_list,
-                    'provider': model.provider,
-                    'last_updated': model.last_validated
-                })
-            else:
-                return Response({
-                    'success': False,
-                    'error': message
-                }, status=status.HTTP_400_BAD_REQUEST)
-                
-        except Exception as e:
-            return Response({
-                'success': False,
-                'error': str(e)
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     @action(detail=False, methods=['post'])
     def test_connection(self, request):
@@ -237,7 +241,7 @@ class MCPToolViewSet(viewsets.ModelViewSet):
         
         return queryset
     
-    @action(detail=True, methods=['post'])
+    @action(detail=True, methods=['post'], url_path='health-check')
     def health_check(self, request, pk=None):
         """执行工具健康检查"""
         try:

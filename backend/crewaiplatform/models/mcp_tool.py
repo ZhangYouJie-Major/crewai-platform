@@ -330,59 +330,369 @@ class MCPTool(models.Model):
         
         return config
     
-    def create_mcp_client(self):
-        """创建MCP客户端实例"""
+    async def create_mcp_client(self):
+        """根据类型创建对应的 MCP 客户端（官方 SDK）"""
         try:
-            from mcp import Client  # 假设使用的MCP客户端库
-            
+            from mcp import Client
             config = self.get_mcp_config()
             
             if self.server_type == 'stdio':
-                return Client.create_stdio(**config)
+                from mcp.client.stdio import stdio_client
+                return Client(stdio_client(**config))
+                
             elif self.server_type == 'sse':
-                return Client.create_sse(**config)
+                from mcp.client.sse import sse_client
+                return Client(sse_client(**config))
+                
             elif self.server_type == 'http':
-                return Client.create_http(**config)
+                from mcp.client.http import http_client
+                return Client(http_client(**config))
+                
             else:
                 raise ValueError(f"不支持的服务器类型: {self.server_type}")
                 
+        except ImportError as e:
+            # 如果 MCP 库不可用，返回错误信息但不中断程序
+            raise ValueError(f"MCP库未安装或版本不兼容: {str(e)}。建议使用 pip install mcp 安装官方SDK")
         except Exception as e:
             raise ValueError(f"创建MCP客户端失败: {str(e)}")
     
-    def test_connection(self):
-        """测试MCP连接"""
+    async def test_mcp_client_connection(self):
+        """使用官方 MCP SDK 测试连接（可选）"""
         try:
-            client = self.create_mcp_client()
-            
-            # 记录开始时间
+            import asyncio
+            from django.utils import timezone
             import time
+            
             start_time = time.time()
             
-            # 执行健康检查
-            result = client.call_tool(self.health_check_method, {})
+            # 创建客户端
+            client = await self.create_mcp_client()
+            
+            # 使用异步上下文管理器
+            async with client:
+                # 尝试列出可用工具
+                tools = await client.list_tools()
+                
+                response_time = int((time.time() - start_time) * 1000)
+                
+                # 更新状态
+                self.status = 'healthy'
+                self.last_health_check = timezone.now()
+                self.last_error = ""
+                self.response_time_ms = response_time
+                
+                # 更新工具 schema
+                if tools and hasattr(tools, 'tools'):
+                    self.tool_schema = {
+                        'tools': [
+                            {
+                                'name': tool.name,
+                                'description': tool.description,
+                                'inputSchema': getattr(tool, 'inputSchema', {})
+                            }
+                            for tool in tools.tools
+                        ]
+                    }
+                
+                self.save()
+                
+                return True, "MCP连接成功", {
+                    'tools_count': len(tools.tools) if tools and hasattr(tools, 'tools') else 0,
+                    'response_time_ms': response_time
+                }
+                
+        except ImportError:
+            # MCP 库不可用，回退到标准 HTTP 测试
+            return await self._fallback_to_http_test()
+        except Exception as e:
+            # 更新错误状态
+            self.status = 'error'
+            self.last_health_check = timezone.now()
+            self.last_error = str(e)
+            self.save()
+            
+            return False, f"MCP连接失败: {str(e)}", None
+    
+    async def _fallback_to_http_test(self):
+        """当MCP库不可用时的回退测试方案"""
+        return self.test_connection()  # 使用之前实现的标准HTTP测试
+    
+    def test_connection_with_crewai(self):
+        """使用CrewAI SDK测试MCP连接（推荐方法）"""
+        import time
+        from django.utils import timezone
+        
+        start_time = time.time()
+        
+        try:
+            # 优先使用CrewAI SDK进行测试
+            from crewai_tools import MCPServerAdapter
+            
+            # 构建CrewAI兼容的服务器配置
+            server_config = {
+                "transport": self.server_type,
+                **self.connection_config
+            }
+            
+            # 使用MCPServerAdapter进行连接测试
+            with MCPServerAdapter(server_config) as tools:
+                tool_names = [t.name for t in tools] if tools else []
+                
+                # 计算响应时间
+                response_time = int((time.time() - start_time) * 1000)
+                
+                # 更新状态
+                self.status = 'healthy'
+                self.last_error = ""
+                self.response_time_ms = response_time
+                self.last_health_check = timezone.now()
+                
+                # 更新工具schema
+                if tools:
+                    try:
+                        self.tool_schema = {
+                            'tools': [
+                                {
+                                    'name': tool.name,
+                                    'description': getattr(tool, 'description', ''),
+                                    'inputSchema': getattr(tool, 'args_schema', {})
+                                }
+                                for tool in tools
+                            ]
+                        }
+                    except Exception as schema_error:
+                        # 如果schema更新失败，记录但不中断测试
+                        pass
+                
+                self.save()
+                
+                return True, f"✅ 连接成功，可用工具：{len(tool_names)}个", {
+                    'tools_count': len(tool_names),
+                    'tool_names': tool_names,
+                    'response_time_ms': response_time,
+                    'sdk': 'crewai_tools'
+                }
+                
+        except ImportError:
+            # CrewAI SDK不可用，回退到标准测试
+            return self._fallback_connection_test()
+            
+        except Exception as e:
+            # CrewAI连接失败，记录错误
+            response_time = int((time.time() - start_time) * 1000)
+            error_msg = f"❌ 连接失败：{str(e)}"
+            
+            self.status = 'error'
+            self.last_error = error_msg
+            self.response_time_ms = response_time
+            self.last_health_check = timezone.now()
+            self.save()
+            
+            return False, error_msg, None
+    
+    def test_connection(self):
+        """测试MCP连接 - 智能选择最佳方法"""
+        # 优先使用CrewAI SDK测试
+        try:
+            return self.test_connection_with_crewai()
+        except Exception:
+            # 如果CrewAI测试失败，回退到标准测试
+            return self._fallback_connection_test()
+    
+    def _fallback_connection_test(self):
+        """回退到标准连接测试方法"""
+        import time
+        import requests
+        import subprocess
+        import os
+        from django.utils import timezone
+        
+        start_time = time.time()
+        
+        try:
+            config = self.connection_config or {}
+            
+            if self.server_type == 'sse':
+                # SSE (Server-Sent Events) 连接测试
+                success, message, result = self._test_sse_connection(config)
+                
+            elif self.server_type == 'http':
+                # HTTP 连接测试
+                success, message, result = self._test_http_connection(config)
+                
+            elif self.server_type == 'stdio':
+                # STDIO 连接测试
+                success, message, result = self._test_stdio_connection(config)
+                
+            else:
+                raise ValueError(f"不支持的服务器类型: {self.server_type}")
             
             # 计算响应时间
             response_time = int((time.time() - start_time) * 1000)
             
             # 更新状态
-            from django.utils import timezone
-            self.status = 'healthy'
+            if success:
+                self.status = 'healthy'
+                self.last_error = ""
+                self.response_time_ms = response_time
+            else:
+                self.status = 'unhealthy'
+                self.last_error = message
+                
             self.last_health_check = timezone.now()
-            self.last_error = ""
-            self.response_time_ms = response_time
             self.save()
             
-            return True, "连接成功", result
+            return success, message, result
             
         except Exception as e:
             # 更新错误状态
-            from django.utils import timezone
-            self.status = 'unhealthy'
+            self.status = 'error'
             self.last_health_check = timezone.now()
             self.last_error = str(e)
+            self.response_time_ms = int((time.time() - start_time) * 1000)
             self.save()
             
-            return False, str(e), None
+            return False, f"连接测试失败: {str(e)}", None
+    
+    def _test_sse_connection(self, config):
+        """测试SSE连接"""
+        try:
+            import requests
+            
+            url = config.get('url')
+            if not url:
+                return False, "SSE配置中缺少URL", None
+                
+            headers = config.get('headers', {})
+            timeout = self.connection_timeout or 30
+            
+            # 尝试连接到SSE端点
+            response = requests.get(
+                url, 
+                headers=headers, 
+                timeout=timeout,
+                stream=True
+            )
+            
+            if response.status_code == 200:
+                # 检查是否是SSE响应
+                content_type = response.headers.get('content-type', '')
+                if 'text/event-stream' in content_type or 'text/plain' in content_type:
+                    return True, "SSE连接成功", {
+                        "status_code": response.status_code,
+                        "content_type": content_type,
+                        "headers": dict(response.headers)
+                    }
+                else:
+                    return False, f"响应类型不是SSE: {content_type}", None
+            else:
+                return False, f"HTTP状态码错误: {response.status_code}", None
+                
+        except requests.exceptions.Timeout:
+            return False, "连接超时", None
+        except requests.exceptions.ConnectionError:
+            return False, "连接失败，无法访问服务器", None
+        except Exception as e:
+            return False, f"SSE连接测试失败: {str(e)}", None
+    
+    def _test_http_connection(self, config):
+        """测试HTTP连接"""
+        try:
+            import requests
+            
+            base_url = config.get('base_url') or config.get('url')
+            if not base_url:
+                return False, "HTTP配置中缺少base_url或url", None
+                
+            headers = config.get('headers', {})
+            timeout = self.connection_timeout or 30
+            
+            # 尝试发送健康检查请求
+            health_endpoint = base_url.rstrip('/') + '/health'
+            
+            try:
+                response = requests.get(
+                    health_endpoint,
+                    headers=headers,
+                    timeout=timeout
+                )
+                
+                if response.status_code in [200, 404]:  # 404也表示服务器在运行
+                    return True, "HTTP连接成功", {
+                        "status_code": response.status_code,
+                        "response_time_ms": response.elapsed.total_seconds() * 1000,
+                        "headers": dict(response.headers)
+                    }
+                else:
+                    return False, f"HTTP状态码: {response.status_code}", None
+                    
+            except requests.exceptions.RequestException:
+                # 如果/health端点不存在，尝试根路径
+                response = requests.get(
+                    base_url,
+                    headers=headers,
+                    timeout=timeout
+                )
+                
+                if response.status_code < 500:  # 任何非服务器错误都表示连接成功
+                    return True, "HTTP连接成功（根路径）", {
+                        "status_code": response.status_code,
+                        "response_time_ms": response.elapsed.total_seconds() * 1000
+                    }
+                else:
+                    return False, f"HTTP状态码: {response.status_code}", None
+                    
+        except requests.exceptions.Timeout:
+            return False, "HTTP连接超时", None
+        except requests.exceptions.ConnectionError:
+            return False, "HTTP连接失败，无法访问服务器", None
+        except Exception as e:
+            return False, f"HTTP连接测试失败: {str(e)}", None
+    
+    def _test_stdio_connection(self, config):
+        """测试STDIO连接"""
+        try:
+            import subprocess
+            import os
+            
+            command = config.get('command')
+            args = config.get('args', [])
+            env = config.get('env', {})
+            
+            if not command:
+                return False, "STDIO配置中缺少command", None
+                
+            # 构造完整的命令
+            full_command = [command] + args
+            timeout = self.connection_timeout or 30
+            
+            # 尝试执行命令并检查是否可以启动
+            result = subprocess.run(
+                full_command,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                env={**os.environ, **env} if env else None
+            )
+            
+            # 检查命令是否成功执行
+            if result.returncode == 0 or result.stderr == "":
+                return True, "STDIO连接成功", {
+                    "command": " ".join(full_command),
+                    "return_code": result.returncode,
+                    "stdout": result.stdout[:500] if result.stdout else "",
+                    "stderr": result.stderr[:500] if result.stderr else ""
+                }
+            else:
+                return False, f"命令执行失败: {result.stderr}", None
+                
+        except subprocess.TimeoutExpired:
+            return False, "STDIO命令执行超时", None
+        except FileNotFoundError:
+            return False, f"命令不存在: {command}", None
+        except Exception as e:
+            return False, f"STDIO连接测试失败: {str(e)}", None
     
     def call_tool(self, tool_name, arguments=None):
         """调用MCP工具"""

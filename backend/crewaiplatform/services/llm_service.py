@@ -125,12 +125,29 @@ class LLMService:
             with transaction.atomic():
                 llm_model = LLMModel.objects.get(id=model_id)
                 
-                # 检查是否有Agent正在使用此模型
-                if llm_model.primary_agents.filter(is_active=True).exists():
-                    return False, "有活跃的Agent正在使用此模型，无法删除"
+                # 检查是否有Agent正在使用此模型作为主要模型
+                primary_agents = llm_model.primary_agents.filter(is_active=True)
+                if primary_agents.exists():
+                    agent_names = [agent.display_name for agent in primary_agents[:3]]
+                    if primary_agents.count() > 3:
+                        agent_names.append(f"等{primary_agents.count()}个")
+                    return False, f"有活跃的Agent正在使用此模型作为主要模型：{', '.join(agent_names)}，无法删除"
                 
-                if llm_model.function_calling_agents.filter(is_active=True).exists():
-                    return False, "有活跃的Agent将此模型用作工具调用模型，无法删除"
+                # 检查是否有Agent正在使用此模型作为工具调用模型  
+                function_calling_agents = llm_model.function_calling_agents.filter(is_active=True)
+                if function_calling_agents.exists():
+                    agent_names = [agent.display_name for agent in function_calling_agents[:3]]
+                    if function_calling_agents.count() > 3:
+                        agent_names.append(f"等{function_calling_agents.count()}个")
+                    return False, f"有活跃的Agent正在使用此模型作为工具调用模型：{', '.join(agent_names)}，无法删除"
+                
+                # 检查是否有非活跃的Agent仍在引用此模型
+                all_primary_agents = llm_model.primary_agents.all()
+                all_function_calling_agents = llm_model.function_calling_agents.all()
+                
+                if all_primary_agents.exists() or all_function_calling_agents.exists():
+                    total_agents = all_primary_agents.count() + all_function_calling_agents.count()
+                    return False, f"仍有{total_agents}个Agent引用此模型，请先解除关联或删除相关Agent后再删除此模型"
                 
                 model_name = llm_model.name
                 llm_model.delete()
@@ -142,6 +159,19 @@ class LLMService:
             return False, "LLM模型不存在"
             
         except Exception as e:
+            # 捕获Django的ProtectedError异常
+            from django.db.models.deletion import ProtectedError
+            if isinstance(e, ProtectedError):
+                # 解析受保护的对象
+                protected_objects = e.args[1]
+                if protected_objects:
+                    agent_names = [str(obj) for obj in list(protected_objects)[:3]]
+                    if len(protected_objects) > 3:
+                        agent_names.append(f"等{len(protected_objects)}个")
+                    return False, f"无法删除模型，有Agent正在引用：{', '.join(agent_names)}"
+                else:
+                    return False, "无法删除模型，存在关联的Agent"
+            
             error_msg = f"删除LLM模型失败: {str(e)}"
             logger.error(error_msg)
             return False, error_msg
@@ -169,111 +199,7 @@ class LLMService:
             logger.error(error_msg)
             return False, error_msg
     
-    @staticmethod
-    def get_available_models_list(model_id: int) -> Tuple[bool, str, Optional[List[str]]]:
-        """
-        获取可用模型列表
-        
-        Args:
-            model_id: 模型ID
-            
-        Returns:
-            (成功状态, 消息, 模型列表)
-        """
-        try:
-            llm_model = LLMModel.objects.get(id=model_id)
-            
-            # 根据提供商获取可用模型列表
-            if llm_model.provider == 'openai':
-                models = LLMService._get_openai_models(llm_model)
-            elif llm_model.provider == 'anthropic':
-                models = LLMService._get_anthropic_models(llm_model)
-            elif llm_model.provider == 'azure_openai':
-                models = LLMService._get_azure_openai_models(llm_model)
-            elif llm_model.provider == 'ollama':
-                models = LLMService._get_ollama_models(llm_model)
-            else:
-                models = []
-            
-            # 更新模型信息
-            llm_model.model_info = {'available_models': models, 'last_sync': timezone.now().isoformat()}
-            llm_model.save()
-            
-            return True, "获取模型列表成功", models
-            
-        except LLMModel.DoesNotExist:
-            return False, "LLM模型不存在", None
-            
-        except Exception as e:
-            error_msg = f"获取模型列表失败: {str(e)}"
-            logger.error(error_msg)
-            return False, error_msg, None
     
-    @staticmethod
-    def _get_openai_models(llm_model: LLMModel) -> List[str]:
-        """获取OpenAI可用模型列表"""
-        try:
-            from openai import OpenAI
-            
-            client = OpenAI(
-                api_key=llm_model.get_decrypted_api_key(),
-                base_url=llm_model.api_base_url or None
-            )
-            
-            models = client.models.list()
-            return [model.id for model in models.data if model.id.startswith(('gpt-', 'text-', 'davinci', 'curie', 'babbage', 'ada'))]
-            
-        except Exception as e:
-            logger.error(f"获取OpenAI模型列表失败: {str(e)}")
-            return []
-    
-    @staticmethod
-    def _get_anthropic_models(llm_model: LLMModel) -> List[str]:
-        """获取Anthropic可用模型列表"""
-        # Anthropic目前的可用模型（相对固定）
-        return [
-            'claude-3-5-sonnet-20241022',
-            'claude-3-5-haiku-20241022',
-            'claude-3-opus-20240229',
-            'claude-3-sonnet-20240229',
-            'claude-3-haiku-20240307',
-        ]
-    
-    @staticmethod
-    def _get_azure_openai_models(llm_model: LLMModel) -> List[str]:
-        """获取Azure OpenAI可用模型列表"""
-        try:
-            from openai import AzureOpenAI
-            
-            client = AzureOpenAI(
-                api_key=llm_model.get_decrypted_api_key(),
-                azure_endpoint=llm_model.api_base_url,
-                api_version=llm_model.api_version or "2024-02-01"
-            )
-            
-            deployments = client.models.list()
-            return [deployment.id for deployment in deployments.data]
-            
-        except Exception as e:
-            logger.error(f"获取Azure OpenAI模型列表失败: {str(e)}")
-            return []
-    
-    @staticmethod
-    def _get_ollama_models(llm_model: LLMModel) -> List[str]:
-        """获取Ollama可用模型列表"""
-        try:
-            import requests
-            
-            base_url = llm_model.api_base_url or "http://localhost:11434"
-            response = requests.get(f"{base_url}/api/tags", timeout=30)
-            response.raise_for_status()
-            
-            data = response.json()
-            return [model['name'] for model in data.get('models', [])]
-            
-        except Exception as e:
-            logger.error(f"获取Ollama模型列表失败: {str(e)}")
-            return []
     
     @staticmethod
     def batch_validate_models() -> Tuple[bool, str, Dict[str, Any]]:
@@ -397,25 +323,3 @@ class LLMService:
             logger.error(f"获取模型统计信息失败: {str(e)}")
             return {}
     
-    @staticmethod
-    def sync_model_info(model_id: int) -> Tuple[bool, str]:
-        """
-        同步模型信息
-        
-        Args:
-            model_id: 模型ID
-            
-        Returns:
-            (成功状态, 消息)
-        """
-        try:
-            success, message, models = LLMService.get_available_models_list(model_id)
-            if success:
-                return True, f"模型信息同步成功，发现 {len(models)} 个可用模型"
-            else:
-                return False, f"模型信息同步失败: {message}"
-                
-        except Exception as e:
-            error_msg = f"同步模型信息失败: {str(e)}"
-            logger.error(error_msg)
-            return False, error_msg

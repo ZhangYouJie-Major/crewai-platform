@@ -87,7 +87,7 @@
         </template>
       </el-table-column>
       
-      <el-table-column label="操作" width="280" fixed="right">
+      <el-table-column label="操作" width="200" fixed="right">
         <template #default="scope">
           <el-button
             type="success"
@@ -99,15 +99,6 @@
             验证连接
           </el-button>
           
-          <el-button
-            type="primary"
-            size="small"
-            icon="List"
-            @click="getModelsList(scope.row)"
-            :loading="scope.row.fetchingModels"
-          >
-            获取模型
-          </el-button>
           
           <el-button
             type="warning"
@@ -286,49 +277,6 @@
             placeholder="模型的详细描述（可选）"
           />
         </el-form-item>
-
-        <!-- 连接测试区域 -->
-        <el-divider content-position="left">连接测试</el-divider>
-        
-        <div class="test-section">
-          <el-button
-            type="primary"
-            @click="testConnection"
-            :loading="testing"
-            :disabled="!canTest"
-          >
-            测试连接并获取模型列表
-          </el-button>
-          
-          <div v-if="!canTest" style="margin-top: 8px;">
-            <el-text type="info" size="small">
-              请先配置供应商、模型标识和API密钥后再进行测试
-            </el-text>
-          </div>
-          
-          <div v-if="testResult" class="test-result">
-            <el-alert
-              :type="testResult.success ? 'success' : 'error'"
-              :title="testResult.success ? '连接成功' : '连接失败'"
-              :description="testResult.message"
-              show-icon
-              :closable="false"
-            />
-            
-            <!-- 显示获取到的模型列表 -->
-            <div v-if="testResult.success && testResult.models && testResult.models.length > 0" class="models-list">
-              <h4>可用模型列表：</h4>
-              <el-tag
-                v-for="model in testResult.models"
-                :key="model"
-                @click="formData.model_name = model"
-                style="margin: 2px; cursor: pointer;"
-              >
-                {{ model }}
-              </el-tag>
-            </div>
-          </div>
-        </div>
       </el-form>
 
       <template #footer>
@@ -343,27 +291,6 @@
           </el-button>
         </span>
       </template>
-    </el-dialog>
-
-    <!-- 模型列表对话框 -->
-    <el-dialog
-      v-model="modelsDialogVisible"
-      title="可用模型列表"
-      width="600px"
-    >
-      <div v-if="selectedModelsList.length > 0">
-        <p>从 <strong>{{ selectedModelInfo.name }}</strong> 获取到以下模型：</p>
-        <el-tag
-          v-for="model in selectedModelsList"
-          :key="model"
-          style="margin: 4px;"
-        >
-          {{ model }}
-        </el-tag>
-      </div>
-      <div v-else>
-        <el-empty description="暂无可用模型" />
-      </div>
     </el-dialog>
   </div>
 </template>
@@ -390,10 +317,6 @@ const testing = ref(false)
 const testResult = ref(null)
 const batchValidating = ref(false)
 
-// 模型列表对话框
-const modelsDialogVisible = ref(false)
-const selectedModelsList = ref([])
-const selectedModelInfo = ref({})
 const fetchingAvailableModels = ref(false)
 const availableModels = ref([])
 
@@ -688,24 +611,6 @@ const validateModel = async (model) => {
   }
 }
 
-const getModelsList = async (model) => {
-  model.fetchingModels = true
-  try {
-    const response = await api.getLLMModelModels(model.id)
-    
-    selectedModelInfo.value = model
-    selectedModelsList.value = response.data.models || []
-    modelsDialogVisible.value = true
-    
-    if (selectedModelsList.value.length === 0) {
-      ElMessage.warning('未获取到可用模型列表')
-    }
-  } catch (error) {
-    ElMessage.error('获取模型列表失败：' + error.message)
-  } finally {
-    model.fetchingModels = false
-  }
-}
 
 const deleteModel = async (model) => {
   try {

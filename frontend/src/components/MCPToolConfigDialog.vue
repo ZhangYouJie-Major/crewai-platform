@@ -17,8 +17,17 @@
       <el-form-item label="工具名称" prop="name">
         <el-input
           v-model="formData.name"
-          placeholder="请输入工具名称"
-          maxlength="100"
+          placeholder="请输入工具名称（唯一标识）"
+          maxlength="64"
+          show-word-limit
+        />
+      </el-form-item>
+
+      <el-form-item label="显示名称" prop="display_name">
+        <el-input
+          v-model="formData.display_name"
+          placeholder="请输入显示名称（用于界面展示）"
+          maxlength="128"
           show-word-limit
         />
       </el-form-item>
@@ -34,35 +43,51 @@
         />
       </el-form-item>
 
-      <el-form-item label="服务地址" prop="server_url">
+      <el-form-item label="服务器类型" prop="server_type">
+        <el-select v-model="formData.server_type" placeholder="请选择服务器类型" style="width: 100%">
+          <el-option label="SSE (Server-Sent Events)" value="sse" />
+          <el-option label="HTTP (标准HTTP)" value="http" />
+          <el-option label="STDIO (标准输入输出)" value="stdio" />
+        </el-select>
+      </el-form-item>
+
+      <el-form-item v-if="formData.server_type === 'sse' || formData.server_type === 'http'" label="服务地址" prop="server_url">
         <el-input
-          v-model="formData.server_url"
-          placeholder="请输入MCP服务器地址，如: ws://localhost:8080"
+          v-model="connectionConfig.url"
+          placeholder="请输入服务器地址，如: https://api.example.com"
           maxlength="500"
-        >
-          <template #prepend>
-            <el-select v-model="urlPrefix" style="width: 100px" @change="handlePrefixChange">
-              <el-option label="ws://" value="ws://" />
-              <el-option label="wss://" value="wss://" />
-              <el-option label="http://" value="http://" />
-              <el-option label="https://" value="https://" />
-            </el-select>
-          </template>
-        </el-input>
+        />
+      </el-form-item>
+
+      <el-form-item v-if="formData.server_type === 'stdio'" label="命令配置">
+        <el-row :gutter="10">
+          <el-col :span="12">
+            <el-input
+              v-model="connectionConfig.command"
+              placeholder="命令，如: npx"
+            />
+          </el-col>
+          <el-col :span="12">
+            <el-input
+              v-model="argsString"
+              placeholder="参数，用空格分隔"
+            />
+          </el-col>
+        </el-row>
       </el-form-item>
 
       <el-row :gutter="20">
         <el-col :span="12">
-          <el-form-item label="超时时间" prop="timeout">
+          <el-form-item label="连接超时" prop="connection_timeout">
             <el-input-number
-              v-model="formData.timeout"
+              v-model="formData.connection_timeout"
               :min="1"
               :max="300"
               :step="1"
               controls-position="right"
               style="width: 100%"
             />
-            <template #suffix>秒</template>
+            <span style="margin-left: 8px; color: #999;">秒</span>
           </el-form-item>
         </el-col>
         <el-col :span="12">
@@ -70,7 +95,7 @@
             <el-input
               v-model="formData.version"
               placeholder="如: v1.0.0"
-              maxlength="20"
+              maxlength="32"
             />
           </el-form-item>
         </el-col>
@@ -78,26 +103,17 @@
 
       <el-form-item label="认证配置">
         <el-switch
-          v-model="formData.auth_required"
+          v-model="needAuth"
           active-text="需要认证"
           inactive-text="无需认证"
         />
       </el-form-item>
 
-      <el-form-item v-if="formData.auth_required" label="认证类型" prop="auth_type">
-        <el-select v-model="formData.auth_type" placeholder="请选择认证类型" style="width: 100%">
-          <el-option label="API Key" value="api_key" />
-          <el-option label="Bearer Token" value="bearer" />
-          <el-option label="Basic Auth" value="basic" />
-          <el-option label="OAuth2" value="oauth2" />
-        </el-select>
-      </el-form-item>
-
-      <el-form-item v-if="formData.auth_required" label="认证凭据" prop="auth_credentials">
+      <el-form-item v-if="needAuth" label="Authorization">
         <el-input
-          v-model="formData.auth_credentials"
+          v-model="authToken"
           type="password"
-          placeholder="请输入认证凭据"
+          placeholder="请输入API Key或Token"
           show-password
           maxlength="500"
         />
@@ -113,74 +129,6 @@
             公开工具可被其他用户使用，私有工具仅自己可用
           </el-text>
         </div>
-      </el-form-item>
-
-      <el-form-item label="高级配置">
-        <el-collapse>
-          <el-collapse-item title="环境变量" name="env">
-            <div class="env-config">
-              <el-button @click="addEnvVar" size="small" type="primary" icon="Plus">
-                添加环境变量
-              </el-button>
-              <div class="env-list">
-                <div 
-                  v-for="(env, index) in formData.environment_variables" 
-                  :key="index"
-                  class="env-item"
-                >
-                  <el-input
-                    v-model="env.key"
-                    placeholder="变量名"
-                    style="width: 40%"
-                  />
-                  <el-input
-                    v-model="env.value"
-                    placeholder="变量值"
-                    style="width: 40%"
-                  />
-                  <el-button
-                    @click="removeEnvVar(index)"
-                    size="small"
-                    type="danger"
-                    icon="Delete"
-                  />
-                </div>
-              </div>
-            </div>
-          </el-collapse-item>
-          
-          <el-collapse-item title="请求头配置" name="headers">
-            <div class="headers-config">
-              <el-button @click="addHeader" size="small" type="primary" icon="Plus">
-                添加请求头
-              </el-button>
-              <div class="headers-list">
-                <div 
-                  v-for="(header, index) in formData.custom_headers" 
-                  :key="index"
-                  class="header-item"
-                >
-                  <el-input
-                    v-model="header.key"
-                    placeholder="Header名称"
-                    style="width: 40%"
-                  />
-                  <el-input
-                    v-model="header.value"
-                    placeholder="Header值"
-                    style="width: 40%"
-                  />
-                  <el-button
-                    @click="removeHeader(index)"
-                    size="small"
-                    type="danger"
-                    icon="Delete"
-                  />
-                </div>
-              </div>
-            </div>
-          </el-collapse-item>
-        </el-collapse>
       </el-form-item>
     </el-form>
 
@@ -199,7 +147,6 @@
 <script setup>
 import { ref, reactive, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Plus, Delete } from '@element-plus/icons-vue'
 import api from '@/services/api'
 
 const props = defineProps({
@@ -226,47 +173,47 @@ const formRef = ref(null)
 const submitting = ref(false)
 const testing = ref(false)
 
-// URL前缀
-const urlPrefix = ref('ws://')
+// 认证相关
+const needAuth = ref(false)
+const authToken = ref('')
+const argsString = ref('')
+
+// 连接配置
+const connectionConfig = reactive({
+  url: '',
+  command: '',
+  args: [],
+  headers: {}
+})
 
 // 表单数据
 const formData = reactive({
   name: '',
+  display_name: '',
   description: '',
-  server_url: '',
-  timeout: 30,
-  version: 'v1.0.0',
-  auth_required: false,
-  auth_type: 'api_key',
-  auth_credentials: '',
-  is_public: false,
-  environment_variables: [],
-  custom_headers: []
+  server_type: '',
+  connection_config: {},
+  connection_timeout: 30,
+  version: '',
+  is_public: false
 })
 
 // 表单验证规则
 const rules = {
   name: [
     { required: true, message: '请输入工具名称', trigger: 'blur' },
-    { min: 2, max: 100, message: '长度在 2 到 100 个字符', trigger: 'blur' }
+    { min: 2, max: 64, message: '长度在 2 到 64 个字符', trigger: 'blur' }
   ],
-  server_url: [
-    { required: true, message: '请输入服务地址', trigger: 'blur' },
-    { 
-      pattern: /^(ws|wss|http|https):\/\/.+/, 
-      message: '请输入有效的服务地址', 
-      trigger: 'blur' 
-    }
+  display_name: [
+    { required: true, message: '请输入显示名称', trigger: 'blur' },
+    { min: 2, max: 128, message: '长度在 2 到 128 个字符', trigger: 'blur' }
   ],
-  timeout: [
-    { required: true, message: '请输入超时时间', trigger: 'blur' },
+  server_type: [
+    { required: true, message: '请选择服务器类型', trigger: 'change' }
+  ],
+  connection_timeout: [
+    { required: true, message: '请输入连接超时时间', trigger: 'blur' },
     { type: 'number', min: 1, max: 300, message: '超时时间应在1-300秒之间', trigger: 'blur' }
-  ],
-  auth_type: [
-    { required: true, message: '请选择认证类型', trigger: 'change' }
-  ],
-  auth_credentials: [
-    { required: true, message: '请输入认证凭据', trigger: 'blur' }
   ]
 }
 
@@ -277,52 +224,86 @@ watch(() => props.visible, (newVal) => {
   }
 })
 
+// 监听参数字符串变化
+watch(argsString, (newVal) => {
+  connectionConfig.args = newVal ? newVal.split(' ').filter(arg => arg.trim()) : []
+})
+
+// 监听认证配置变化
+watch(needAuth, (newVal) => {
+  if (newVal && authToken.value) {
+    connectionConfig.headers = {
+      ...connectionConfig.headers,
+      Authorization: `Bearer ${authToken.value}`
+    }
+  } else {
+    delete connectionConfig.headers.Authorization
+  }
+})
+
+watch(authToken, (newVal) => {
+  if (needAuth.value && newVal) {
+    connectionConfig.headers = {
+      ...connectionConfig.headers,
+      Authorization: `Bearer ${newVal}`
+    }
+  } else {
+    delete connectionConfig.headers.Authorization
+  }
+})
+
 // 初始化表单
 const initForm = () => {
   if (props.isEdit && props.tool) {
     // 编辑模式，填充现有数据
     Object.assign(formData, {
       name: props.tool.name || '',
+      display_name: props.tool.display_name || '',
       description: props.tool.description || '',
-      server_url: props.tool.server_url || '',
-      timeout: props.tool.timeout || 30,
-      version: props.tool.version || 'v1.0.0',
-      auth_required: props.tool.auth_required || false,
-      auth_type: props.tool.auth_type || 'api_key',
-      auth_credentials: props.tool.auth_credentials || '',
-      is_public: props.tool.is_public || false,
-      environment_variables: props.tool.environment_variables || [],
-      custom_headers: props.tool.custom_headers || []
+      server_type: props.tool.server_type || '',
+      connection_timeout: props.tool.connection_timeout || 30,
+      version: props.tool.version || '',
+      is_public: props.tool.is_public || false
     })
     
-    // 设置URL前缀
-    if (formData.server_url) {
-      if (formData.server_url.startsWith('wss://')) {
-        urlPrefix.value = 'wss://'
-      } else if (formData.server_url.startsWith('ws://')) {
-        urlPrefix.value = 'ws://'
-      } else if (formData.server_url.startsWith('https://')) {
-        urlPrefix.value = 'https://'
-      } else if (formData.server_url.startsWith('http://')) {
-        urlPrefix.value = 'http://'
-      }
+    // 解析连接配置
+    const config = props.tool.connection_config || {}
+    Object.assign(connectionConfig, {
+      url: config.url || '',
+      command: config.command || '',
+      args: config.args || [],
+      headers: config.headers || {}
+    })
+    
+    // 设置UI状态
+    argsString.value = connectionConfig.args.join(' ')
+    const authHeader = connectionConfig.headers.Authorization
+    if (authHeader) {
+      needAuth.value = true
+      authToken.value = authHeader.replace('Bearer ', '')
     }
   } else {
     // 新建模式，重置表单
     Object.assign(formData, {
       name: '',
+      display_name: '',
       description: '',
-      server_url: '',
-      timeout: 30,
+      server_type: 'sse',
+      connection_timeout: 30,
       version: 'v1.0.0',
-      auth_required: false,
-      auth_type: 'api_key',
-      auth_credentials: '',
-      is_public: false,
-      environment_variables: [],
-      custom_headers: []
+      is_public: false
     })
-    urlPrefix.value = 'ws://'
+    
+    Object.assign(connectionConfig, {
+      url: '',
+      command: '',
+      args: [],
+      headers: {}
+    })
+    
+    needAuth.value = false
+    authToken.value = ''
+    argsString.value = ''
   }
   
   // 清除验证状态
@@ -331,56 +312,47 @@ const initForm = () => {
   }
 }
 
-// 处理URL前缀变化
-const handlePrefixChange = () => {
-  if (formData.server_url) {
-    const url = formData.server_url.replace(/^(ws|wss|http|https):\/\//, '')
-    formData.server_url = urlPrefix.value + url
-  }
-}
-
-// 添加环境变量
-const addEnvVar = () => {
-  formData.environment_variables.push({ key: '', value: '' })
-}
-
-// 删除环境变量
-const removeEnvVar = (index) => {
-  formData.environment_variables.splice(index, 1)
-}
-
-// 添加请求头
-const addHeader = () => {
-  formData.custom_headers.push({ key: '', value: '' })
-}
-
-// 删除请求头
-const removeHeader = (index) => {
-  formData.custom_headers.splice(index, 1)
+// 构建连接配置
+const buildConnectionConfig = () => {
+  const config = { ...connectionConfig }
+  
+  // 清理空值
+  if (!config.url) delete config.url
+  if (!config.command) delete config.command
+  if (!config.args || config.args.length === 0) delete config.args
+  if (!config.headers || Object.keys(config.headers).length === 0) delete config.headers
+  
+  return config
 }
 
 // 测试连接
 const handleTest = async () => {
   try {
-    // 先验证必填字段
-    await formRef.value.validateField(['name', 'server_url'])
-    
-    testing.value = true
-    
-    // 构造测试数据
-    const testData = {
-      name: formData.name,
-      server_url: formData.server_url,
-      timeout: formData.timeout,
-      auth_required: formData.auth_required,
-      auth_type: formData.auth_type,
-      auth_credentials: formData.auth_credentials
+    // 如果是编辑模式且有工具ID，直接调用健康检查API
+    if (props.isEdit && props.tool?.id) {
+      testing.value = true
+      const response = await api.healthCheckMCPTool(props.tool.id)
+      
+      if (response.data.success) {
+        ElMessage.success('工具健康检查通过')
+      } else {
+        ElMessage.warning(`工具健康检查失败: ${response.data.message}`)
+      }
+    } else {
+      // 新建模式，先验证必填字段
+      await formRef.value.validateField(['name', 'display_name', 'server_type'])
+      
+      testing.value = true
+      
+      // 构造测试数据
+      const testData = {
+        ...formData,
+        connection_config: buildConnectionConfig()
+      }
+      
+      // 新建模式下，可以先创建临时工具进行测试，或者提示用户先保存
+      ElMessage.info('请先创建工具后再进行连接测试')
     }
-    
-    // 调用测试API（这里可能需要一个专门的测试接口）
-    const response = await api.createMCPTool(testData)
-    
-    ElMessage.success('连接测试成功')
   } catch (error) {
     console.error('测试连接失败:', error)
     ElMessage.error('连接测试失败: ' + (error.response?.data?.message || error.message))
@@ -396,22 +368,17 @@ const handleSubmit = async () => {
     
     submitting.value = true
     
-    // 清理空的环境变量和请求头
-    const cleanData = {
+    // 构建提交数据
+    const submitData = {
       ...formData,
-      environment_variables: formData.environment_variables.filter(
-        env => env.key && env.value
-      ),
-      custom_headers: formData.custom_headers.filter(
-        header => header.key && header.value
-      )
+      connection_config: buildConnectionConfig()
     }
     
     if (props.isEdit) {
-      await api.updateMCPTool(props.tool.id, cleanData)
+      await api.updateMCPTool(props.tool.id, submitData)
       ElMessage.success('工具更新成功')
     } else {
-      await api.createMCPTool(cleanData)
+      await api.createMCPTool(submitData)
       ElMessage.success('工具创建成功')
     }
     
@@ -435,35 +402,9 @@ const handleCancel = () => {
   margin-top: 5px;
 }
 
-.env-config,
-.headers-config {
-  padding: 10px 0;
-}
-
-.env-list,
-.headers-list {
-  margin-top: 10px;
-}
-
-.env-item,
-.header-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 10px;
-}
-
 .dialog-footer {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
-}
-
-:deep(.el-collapse-item__header) {
-  font-size: 14px;
-}
-
-:deep(.el-input-group__prepend) {
-  padding: 0;
 }
 </style>
