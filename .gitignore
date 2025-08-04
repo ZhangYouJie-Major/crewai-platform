@@ -161,6 +161,9 @@ yarn-error.log*
 # IDE
 .vscode/
 .idea/
+*.iml
+*.ipr
+*.iws
 *.swp
 *.swo
 *~
@@ -242,7 +245,6 @@ temp/
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
-.idea
 *.suo
 *.ntvs*
 *.njsproj
@@ -258,7 +260,3 @@ frontend/.env.local
 frontend/.env.development.local
 frontend/.env.test.local
 frontend/.env.production.local
-
-# IntelliJ IDEA
-.idea/
-*.iml

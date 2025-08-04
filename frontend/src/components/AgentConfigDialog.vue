@@ -334,9 +334,8 @@
         <!-- 工具绑定 -->
         <el-tab-pane label="工具配置" name="tools">
           <ToolBindingConfig 
-            :agent-id="form.id"
+            :agent-id="agent?.id || form.id"
             :available-tools="availableTools"
-            :bound-tools="boundTools"
             @tools-updated="handleToolsUpdated"
           />
         </el-tab-pane>
@@ -396,7 +395,7 @@
 
 <script>
 import { ElMessage } from 'element-plus'
-import ToolBindingConfig from './ToolBindingDialog.vue'
+import ToolBindingConfig from './ToolBindingConfig.vue'
 import api from '@/services/api'
 
 export default {
@@ -573,7 +572,7 @@ export default {
       if (!this.agent?.id) return
       
       try {
-        const { data } = await api.getAgentToolRelations({ agent: this.agent.id })
+        const { data } = await api.getAgentToolRelations({ agent_id: this.agent.id })
         this.boundTools = data.results || []
       } catch (error) {
         console.error('Load bound tools error:', error)
@@ -638,8 +637,9 @@ export default {
       return `${value} (${value < 0.3 ? '聚焦' : value < 0.7 ? '平衡' : '多样'})`
     },
 
-    handleToolsUpdated(tools) {
-      this.boundTools = tools
+    handleToolsUpdated() {
+      // 重新加载绑定的工具
+      this.loadBoundTools()
     },
 
     async handleSave() {

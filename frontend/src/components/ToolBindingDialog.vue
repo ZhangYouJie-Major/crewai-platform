@@ -205,11 +205,11 @@ const loadCurrentBindings = async () => {
   
   try {
     loading.value = true
-    const response = await api.getAgentToolRelations()
+    // 使用正确的参数名agent_id进行后端过滤
+    const response = await api.getAgentToolRelations({ agent_id: props.agent.id })
     const relations = response.data.results || response.data || []
-    currentBindings.value = relations
-      .filter(relation => relation.agent === props.agent.id)
-      .sort((a, b) => a.priority - b.priority)
+    currentBindings.value = relations.sort((a, b) => a.priority - b.priority)
+    console.log('加载到的工具绑定:', relations)
   } catch (error) {
     console.error('加载工具绑定失败:', error)
     ElMessage.error('加载工具绑定失败')
