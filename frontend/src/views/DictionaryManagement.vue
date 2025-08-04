@@ -2,7 +2,7 @@
   <div class="dictionary-management">
     <div class="header">
       <h2>字典管理</h2>
-      <p class="description">管理系统字典配置，支持两级字典结构</p>
+      <p class="description">管理系统字典配置，支持层级结构的字典项</p>
     </div>
 
     <el-card class="content-card">
@@ -11,15 +11,34 @@
         <div class="left-actions">
           <el-button type="primary" @click="handleAddDictionary">
             <el-icon><Plus /></el-icon>
-            新增字典类型
+            新增字典项
           </el-button>
           <el-button @click="refreshData">
             <el-icon><Refresh /></el-icon>
             刷新
           </el-button>
+          <el-button @click="handleViewTree">
+            <el-icon><DataBoard /></el-icon>
+            树形视图
+          </el-button>
         </div>
         
         <div class="right-actions">
+          <el-select
+            v-model="filterParent"
+            placeholder="筛选父级项目"
+            clearable
+            style="width: 200px; margin-right: 12px"
+            @change="handleParentFilter"
+          >
+            <el-option
+              v-for="item in parentOptions"
+              :key="item.id"
+              :label="item.name"
+              :value="item.id"
+            />
+          </el-select>
+          
           <el-input
             v-model="searchKeyword"
             placeholder="搜索字典名称或代码"
@@ -34,122 +53,44 @@
         </div>
       </div>
 
-      <!-- 字典类型列表 -->
+      <!-- 字典项列表 -->
       <el-table 
         :data="dictionariesData" 
         v-loading="dictionariesLoading"
-        @expand-change="handleDictionaryExpand"
+        :tree-props="{ children: 'children', hasChildren: 'hasChildren' }"
         row-key="id"
         :header-cell-style="{ backgroundColor: '#f5f7fa', color: '#303133' }"
+        :default-expand-all="false"
       >
-        <el-table-column type="expand">
-          <template #default="props">
-            <div class="dictionary-items">
-              <div class="items-header">
-                <h4>{{ props.row.name }} - 字典项</h4>
-                <el-button 
-                  type="primary" 
-                  size="small" 
-                  @click="handleAddItem(props.row)"
-                >
-                  <el-icon><Plus /></el-icon>
-                  添加字典项
-                </el-button>
-              </div>
-              
-              <!-- 字典项树形表格 -->
-              <el-table 
-                :data="props.row.items || []"
-                :tree-props="{ children: 'children', hasChildren: 'hasChildren' }"
-                row-key="id"
-                size="small"
-                class="items-table"
-                v-loading="itemsLoading"
-                :header-cell-style="{ backgroundColor: '#f5f7fa !important', color: '#303133 !important' }"
-              >
-                <el-table-column prop="name" label="名称" min-width="150">
-                  <template #default="scope">
-                    <div class="item-name">
-                      <span class="name">{{ scope.row.name }}</span>
-                      <el-tag v-if="scope.row.children && scope.row.children.length > 0" size="small" type="info">
-                        {{ scope.row.children.length }} 项
-                      </el-tag>
-                    </div>
-                  </template>
-                </el-table-column>
-                
-                <el-table-column prop="code" label="代码" width="150">
-                  <template #default="scope">
-                    <el-text type="primary" class="code-text">{{ scope.row.code }}</el-text>
-                  </template>
-                </el-table-column>
-                
-                <el-table-column prop="description" label="描述" min-width="200" show-overflow-tooltip />
-                
-                <el-table-column prop="sort_order" label="排序" width="80" align="center">
-                  <template #default="scope">
-                    <el-text type="info">{{ scope.row.sort_order }}</el-text>
-                  </template>
-                </el-table-column>
-                
-                <el-table-column prop="is_active" label="状态" width="80" align="center">
-                  <template #default="scope">
-                    <el-tag :type="scope.row.is_active ? 'success' : 'danger'" size="small">
-                      {{ scope.row.is_active ? '启用' : '禁用' }}
-                    </el-tag>
-                  </template>
-                </el-table-column>
-                
-                <el-table-column label="操作" width="200" align="center">
-                  <template #default="scope">
-                    <el-button 
-                      type="primary" 
-                      size="small" 
-                      @click="handleEditItem(scope.row)"
-                      text
-                    >
-                      编辑
-                    </el-button>
-                    
-                    <el-button 
-                      v-if="!scope.row.parent"
-                      type="primary" 
-                      size="small" 
-                      @click="handleAddChildItem(scope.row, props.row)"
-                      text
-                    >
-                      添加子项
-                    </el-button>
-                    
-                    <el-popconfirm
-                      title="确定要删除这个字典项吗？"
-                      @confirm="handleDeleteItem(scope.row)"
-                    >
-                      <template #reference>
-                        <el-button type="danger" size="small" text>删除</el-button>
-                      </template>
-                    </el-popconfirm>
-                  </template>
-                </el-table-column>
-              </el-table>
+        <el-table-column prop="name" label="名称" min-width="200">
+          <template #default="scope">
+            <div class="dictionary-name">
+              <span class="name">{{ scope.row.name }}</span>
+              <el-tag v-if="scope.row.children && scope.row.children.length > 0" size="small" type="info">
+                {{ scope.row.children.length }} 项
+              </el-tag>
             </div>
           </template>
         </el-table-column>
-
-        <el-table-column prop="name" label="字典名称" min-width="150">
+        
+        <el-table-column prop="code" label="代码" width="150">
           <template #default="scope">
-            <div class="dictionary-name">
-              <el-text size="large" class="name">{{ scope.row.name }}</el-text>
-              <el-text type="info" size="small" class="code">({{ scope.row.code }})</el-text>
-            </div>
+            <el-text type="primary" class="code-text">{{ scope.row.code }}</el-text>
+          </template>
+        </el-table-column>
+        
+        <el-table-column prop="full_path" label="完整路径" min-width="200">
+          <template #default="scope">
+            <el-text type="info" size="small">{{ scope.row.full_path }}</el-text>
           </template>
         </el-table-column>
         
         <el-table-column prop="description" label="描述" min-width="200" show-overflow-tooltip />
         
-        <el-table-column prop="item_count" label="字典项数量" width="120" align="center">
+        <el-table-column prop="value" label="扩展值" min-width="150" show-overflow-tooltip>
           <template #default="scope">
-            <el-text type="primary">{{ scope.row.item_count || 0 }}</el-text>
+            <el-text v-if="scope.row.value" type="info" size="small">{{ scope.row.value }}</el-text>
+            <el-text v-else type="info" size="small">-</el-text>
           </template>
         </el-table-column>
         
@@ -173,13 +114,23 @@
           </template>
         </el-table-column>
         
-        <el-table-column label="操作" width="150" align="center" fixed="right">
+        <el-table-column label="操作" width="220" align="center" fixed="right">
           <template #default="scope">
             <el-button type="primary" size="small" @click="handleEditDictionary(scope.row)" text>
               编辑
             </el-button>
+            
+            <el-button 
+              type="primary" 
+              size="small" 
+              @click="handleAddChildDictionary(scope.row)"
+              text
+            >
+              添加子项
+            </el-button>
+            
             <el-popconfirm
-              title="确定要删除这个字典类型吗？"
+              title="确定要删除这个字典项吗？"
               @confirm="handleDeleteDictionary(scope.row)"
             >
               <template #reference>
@@ -191,10 +142,10 @@
       </el-table>
     </el-card>
 
-    <!-- 字典类型编辑对话框 -->
+    <!-- 字典项编辑对话框 -->
     <el-dialog
       v-model="dictionaryDialogVisible"
-      :title="dictionaryForm.id ? '编辑字典类型' : '新增字典类型'"
+      :title="getDictionaryDialogTitle()"
       width="600px"
       destroy-on-close
     >
@@ -204,17 +155,49 @@
         :rules="dictionaryRules"
         label-width="120px"
       >
+        <el-form-item 
+          v-if="dictionaryForm.parent" 
+          label="父级项目" 
+          prop="parent"
+        >
+          <el-input 
+            :value="parentItem?.name || `父级项目 (ID: ${dictionaryForm.parent})`" 
+            disabled 
+          />
+          <div v-if="parentItem?.code" class="form-tip">
+            父级代码: {{ parentItem.code }}
+          </div>
+          <div v-if="!parentItem?.name" class="form-tip" style="color: #f56c6c;">
+            ⚠️ 无法获取父级项目详细信息，可能原因：
+            <ul style="margin: 4px 0 0 16px; padding: 0;">
+              <li>父级项目已被删除</li>
+              <li>网络连接问题</li>
+              <li>权限不足</li>
+            </ul>
+          </div>
+        </el-form-item>
+        
         <el-form-item label="字典代码" prop="code">
           <el-input 
             v-model="dictionaryForm.code" 
-            placeholder="请输入字典代码，如：llm_provider"
+            placeholder="请输入字典代码，如：openai、gpt-4"
             :disabled="!!dictionaryForm.id"
           />
-          <div class="form-tip">字典代码只能包含小写字母、数字和下划线，且必须以字母开头</div>
+          <div class="form-tip">字典代码用于程序识别</div>
         </el-form-item>
         
         <el-form-item label="字典名称" prop="name">
           <el-input v-model="dictionaryForm.name" placeholder="请输入字典名称" />
+        </el-form-item>
+        
+        <el-form-item label="扩展值" prop="value">
+          <el-input 
+            v-model="dictionaryForm.value" 
+            type="textarea" 
+            :rows="2"
+            placeholder="请输入扩展值（可选）"
+          />
+          <div class="form-tip">可存储额外配置信息，如API端点等</div>
         </el-form-item>
         
         <el-form-item label="描述" prop="description">
@@ -244,119 +227,61 @@
       </template>
     </el-dialog>
 
-    <!-- 字典项编辑对话框 -->
+    <!-- 树形视图对话框 -->
     <el-dialog
-      v-model="itemDialogVisible"
-      :title="getItemDialogTitle()"
-      width="600px"
+      v-model="treeDialogVisible"
+      title="字典项树形视图"
+      width="80%"
       destroy-on-close
     >
-      <el-form 
-        ref="itemFormRef"
-        :model="itemForm" 
-        :rules="itemRules"
-        label-width="120px"
+      <el-tree
+        :data="treeData"
+        :props="{ children: 'children', label: 'name' }"
+        default-expand-all
+        :expand-on-click-node="false"
+        node-key="id"
+        v-loading="treeLoading"
       >
-        <el-form-item label="所属字典" prop="dictionary">
-          <el-input :value="currentDictionary?.name" disabled />
-        </el-form-item>
-        
-        <el-form-item 
-          v-if="itemForm.parent" 
-          label="父级项目" 
-          prop="parent"
-        >
-          <el-input :value="parentItem?.name" disabled />
-        </el-form-item>
-        
-        <el-form-item label="项目代码" prop="code">
-          <el-input 
-            v-model="itemForm.code" 
-            placeholder="请输入项目代码"
-            :disabled="!!itemForm.id"
-          />
-        </el-form-item>
-        
-        <el-form-item label="项目名称" prop="name">
-          <el-input v-model="itemForm.name" placeholder="请输入项目名称" />
-        </el-form-item>
-        
-        <el-form-item label="项目值" prop="value">
-          <el-input 
-            v-model="itemForm.value" 
-            type="textarea" 
-            :rows="2"
-            placeholder="请输入项目值（可选）"
-          />
-        </el-form-item>
-        
-        <el-form-item label="描述" prop="description">
-          <el-input 
-            v-model="itemForm.description" 
-            type="textarea" 
-            :rows="3"
-            placeholder="请输入项目描述"
-          />
-        </el-form-item>
-        
-        <el-form-item label="排序顺序" prop="sort_order">
-          <el-input-number v-model="itemForm.sort_order" :min="0" :max="9999" />
-        </el-form-item>
-        
-        <el-form-item label="是否启用" prop="is_active">
-          <el-switch v-model="itemForm.is_active" />
-        </el-form-item>
-      </el-form>
-      
-      <template #footer>
-        <el-button @click="itemDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleSaveItem" :loading="saveLoading">
-          保存
-        </el-button>
-      </template>
+        <template #default="{ node, data }">
+          <div class="tree-node">
+            <span class="node-label">{{ data.name }}</span>
+            <span class="node-code">({{ data.code }})</span>
+            <el-tag v-if="!data.is_active" type="danger" size="small">禁用</el-tag>
+          </div>
+        </template>
+      </el-tree>
     </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, nextTick } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Refresh, Search } from '@element-plus/icons-vue'
+import { Plus, Refresh, Search, DataBoard } from '@element-plus/icons-vue'
 import api from '@/services/api'
 
 // 响应式数据
 const dictionariesData = ref([])
 const dictionariesLoading = ref(false)
-const itemsLoading = ref(false)
 const searchKeyword = ref('')
+const filterParent = ref(null)
 const saveLoading = ref(false)
+const treeData = ref([])
+const treeLoading = ref(false)
 
 // 对话框控制
 const dictionaryDialogVisible = ref(false)
-const itemDialogVisible = ref(false)
+const treeDialogVisible = ref(false)
 
 // 表单引用
 const dictionaryFormRef = ref(null)
-const itemFormRef = ref(null)
 
-// 当前操作的字典和项目
-const currentDictionary = ref(null)
+// 当前操作的父级项目
 const parentItem = ref(null)
 
-// 字典类型表单
+// 字典项表单
 const dictionaryForm = reactive({
   id: null,
-  code: '',
-  name: '',
-  description: '',
-  sort_order: 0,
-  is_active: true
-})
-
-// 字典项表单
-const itemForm = reactive({
-  id: null,
-  dictionary: null,
   parent: null,
   code: '',
   name: '',
@@ -369,22 +294,29 @@ const itemForm = reactive({
 // 表单验证规则
 const dictionaryRules = {
   code: [
-    { required: true, message: '请输入字典代码', trigger: 'blur' },
-    { pattern: /^[a-z][a-z0-9_]*$/, message: '字典代码只能包含小写字母、数字和下划线，且必须以字母开头', trigger: 'blur' }
+    { required: true, message: '请输入字典代码', trigger: 'blur' }
   ],
   name: [
     { required: true, message: '请输入字典名称', trigger: 'blur' }
   ]
 }
 
-const itemRules = {
-  code: [
-    { required: true, message: '请输入项目代码', trigger: 'blur' }
-  ],
-  name: [
-    { required: true, message: '请输入项目名称', trigger: 'blur' }
-  ]
-}
+// 计算属性 - 父级选项
+const parentOptions = computed(() => {
+  const options = []
+  const collectParents = (items) => {
+    items.forEach(item => {
+      if (!item.parent) {
+        options.push({ id: item.id, name: item.name })
+      }
+      if (item.children && item.children.length > 0) {
+        collectParents(item.children)
+      }
+    })
+  }
+  collectParents(dictionariesData.value)
+  return options
+})
 
 // 方法定义
 const formatDate = (dateString) => {
@@ -392,10 +324,10 @@ const formatDate = (dateString) => {
   return new Date(dateString).toLocaleString('zh-CN')
 }
 
-const getItemDialogTitle = () => {
-  if (itemForm.id) {
+const getDictionaryDialogTitle = () => {
+  if (dictionaryForm.id) {
     return '编辑字典项'
-  } else if (itemForm.parent) {
+  } else if (dictionaryForm.parent) {
     return '新增子级字典项'
   } else {
     return '新增字典项'
@@ -405,18 +337,6 @@ const getItemDialogTitle = () => {
 const resetDictionaryForm = () => {
   Object.assign(dictionaryForm, {
     id: null,
-    code: '',
-    name: '',
-    description: '',
-    sort_order: 0,
-    is_active: true
-  })
-}
-
-const resetItemForm = () => {
-  Object.assign(itemForm, {
-    id: null,
-    dictionary: null,
     parent: null,
     code: '',
     name: '',
@@ -427,18 +347,49 @@ const resetItemForm = () => {
   })
 }
 
-// 获取字典列表
-const fetchDictionaries = async (search = '') => {
-  try {
-    dictionariesLoading.value = true
-    const params = {}
-    if (search) {
-      params.name = search
-      params.code = search
+// 处理树形数据，添加hasChildren属性
+const processTreeData = (data) => {
+  return data.map(item => {
+    const processedItem = {
+      ...item,
+      hasChildren: item.children && item.children.length > 0
     }
     
-    const response = await api.getDictionaries(params)
-    dictionariesData.value = response.data.results || response.data || []
+    if (processedItem.children && processedItem.children.length > 0) {
+      processedItem.children = processTreeData(processedItem.children)
+    }
+    
+    return processedItem
+  })
+}
+
+// 获取字典列表
+const fetchDictionaries = async (params = {}) => {
+  try {
+    dictionariesLoading.value = true
+    
+    // 如果有特定的父级筛选或搜索条件，使用普通列表查询
+    if (params.parent_id || params.name || params.code) {
+      const response = await api.getDictionaries(params)
+      let data = response.data.results || response.data || []
+      // 为平铺数据添加hasChildren属性
+      data = data.map(item => ({
+        ...item,
+        hasChildren: item.children_count > 0
+      }))
+      dictionariesData.value = data
+    } else {
+      // 否则获取树形结构数据
+      const response = await api.getDictionaries({
+        ...params,
+        tree: true
+      })
+      let data = response.data.results || response.data || []
+      // 为树形数据添加hasChildren属性
+      dictionariesData.value = processTreeData(data)
+    }
+    
+    console.log('获取到的字典数据:', dictionariesData.value)
   } catch (error) {
     console.error('获取字典列表失败:', error)
     ElMessage.error('获取字典列表失败')
@@ -447,52 +398,174 @@ const fetchDictionaries = async (search = '') => {
   }
 }
 
-// 获取字典项列表
-const fetchDictionaryItems = async (dictionary) => {
+// 获取树形数据
+const fetchTreeData = async () => {
   try {
-    itemsLoading.value = true
-    const response = await api.getDictionaryItems(dictionary.id, { tree_format: true })
-    
-    // 更新字典的items数据
-    const dictIndex = dictionariesData.value.findIndex(d => d.id === dictionary.id)
-    if (dictIndex !== -1) {
-      dictionariesData.value[dictIndex].items = response.data
-    }
+    treeLoading.value = true
+    const response = await api.getDictionaryTree()
+    treeData.value = response.data.tree || []
   } catch (error) {
-    console.error('获取字典项失败:', error)
-    ElMessage.error('获取字典项失败')
+    console.error('获取树形数据失败:', error)
+    ElMessage.error('获取树形数据失败')
   } finally {
-    itemsLoading.value = false
-  }
-}
-
-// 处理字典展开
-const handleDictionaryExpand = async (row, expandedRows) => {
-  if (expandedRows.find(item => item.id === row.id)) {
-    // 展开时加载字典项
-    await fetchDictionaryItems(row)
+    treeLoading.value = false
   }
 }
 
 // 搜索处理
 const handleSearch = () => {
-  fetchDictionaries(searchKeyword.value)
+  const params = {}
+  if (searchKeyword.value) {
+    params.name = searchKeyword.value
+    params.code = searchKeyword.value
+  }
+  if (filterParent.value) {
+    params.parent_id = filterParent.value
+  }
+  fetchDictionaries(params)
+}
+
+// 父级筛选处理
+const handleParentFilter = () => {
+  handleSearch()
 }
 
 // 刷新数据
 const refreshData = () => {
-  fetchDictionaries(searchKeyword.value)
+  handleSearch()
 }
 
-// 字典类型操作
+// 查看树形视图
+const handleViewTree = async () => {
+  treeDialogVisible.value = true
+  await fetchTreeData()
+}
+
+// 字典项操作
 const handleAddDictionary = () => {
   resetDictionaryForm()
+  parentItem.value = null
   dictionaryDialogVisible.value = true
 }
 
-const handleEditDictionary = (row) => {
-  Object.assign(dictionaryForm, row)
+const handleAddChildDictionary = (parentRow) => {
+  resetDictionaryForm()
+  parentItem.value = parentRow
+  dictionaryForm.parent = parentRow.id
   dictionaryDialogVisible.value = true
+}
+
+const handleEditDictionary = async (row) => {
+  Object.assign(dictionaryForm, row)
+  console.log('编辑字典项:', row)
+  console.log('当前数据:', dictionariesData.value)
+  
+  if (row.parent) {
+    console.log('查找父级项目 ID:', row.parent)
+    
+    // 首先检查当前行是否已经有父级信息（从展开的树形数据中）
+    if (row.parent_name || row.parent_code) {
+      console.log('从当前行数据中找到父级信息')
+      parentItem.value = {
+        id: row.parent,
+        name: row.parent_name,
+        code: row.parent_code
+      }
+    } else {
+      // 首先尝试从树形结构中查找父级项目
+      parentItem.value = findParentInTree(dictionariesData.value, row.parent)
+      console.log('从树形结构中找到的父级项目:', parentItem.value)
+      
+      // 如果没找到，使用改进的查找函数尝试从当前数据中查找父级项目
+      if (!parentItem.value) {
+        parentItem.value = findParentById(dictionariesData.value, row.parent)
+        console.log('从平铺数据中找到的父级项目:', parentItem.value)
+      }
+      
+      // 如果还是没找到，尝试单独获取父级项目信息
+      if (!parentItem.value) {
+        try {
+          console.log('尝试单独获取父级项目信息...')
+          const parentResponse = await api.getDictionaryById(row.parent)
+          parentItem.value = parentResponse.data
+          console.log('单独获取的父级项目:', parentItem.value)
+        } catch (error) {
+          console.error('获取父级项目信息失败:', error)
+          // 如果获取失败，显示错误信息并设置降级显示
+          if (error.response?.status === 404) {
+            console.warn('父级项目不存在，可能已被删除')
+            parentItem.value = { 
+              id: row.parent, 
+              name: null,
+              error: '父级项目不存在或已被删除'
+            }
+          } else if (error.response?.status === 403) {
+            console.warn('没有权限访问父级项目')
+            parentItem.value = { 
+              id: row.parent, 
+              name: null,
+              error: '没有权限访问父级项目'
+            }
+          } else {
+            console.warn('网络错误或其他问题')
+            parentItem.value = { 
+              id: row.parent, 
+              name: null,
+              error: '网络连接问题'
+            }
+          }
+        }
+      }
+    }
+  } else {
+    parentItem.value = null
+  }
+  console.log('最终设置的父级项目:', parentItem.value)
+  dictionaryDialogVisible.value = true
+}
+
+const findItemById = (items, id) => {
+  for (const item of items) {
+    if (item.id === id) {
+      return item
+    }
+    if (item.children && item.children.length > 0) {
+      const found = findItemById(item.children, id)
+      if (found) return found
+    }
+  }
+  return null
+}
+
+// 改进的父级项目查找函数，支持递归查找
+const findParentById = (items, parentId) => {
+  // 首先尝试在平铺的列表中查找
+  const flattenItems = (items, result = []) => {
+    items.forEach(item => {
+      result.push(item)
+      if (item.children && item.children.length > 0) {
+        flattenItems(item.children, result)
+      }
+    })
+    return result
+  }
+  
+  const allItems = flattenItems(items)
+  return allItems.find(item => item.id === parentId) || null
+}
+
+// 从树形结构中查找父级项目
+const findParentInTree = (items, parentId) => {
+  for (const item of items) {
+    if (item.id === parentId) {
+      return item
+    }
+    if (item.children && item.children.length > 0) {
+      const found = findParentInTree(item.children, parentId)
+      if (found) return found
+    }
+  }
+  return null
 }
 
 const handleSaveDictionary = async () => {
@@ -503,96 +576,15 @@ const handleSaveDictionary = async () => {
     if (dictionaryForm.id) {
       // 更新
       await api.updateDictionary(dictionaryForm.id, dictionaryForm)
-      ElMessage.success('字典类型更新成功')
-    } else {
-      // 创建
-      await api.createDictionary(dictionaryForm)
-      ElMessage.success('字典类型创建成功')
-    }
-    
-    dictionaryDialogVisible.value = false
-    await fetchDictionaries(searchKeyword.value)
-  } catch (error) {
-    console.error('保存字典类型失败:', error)
-    ElMessage.error('保存字典类型失败')
-  } finally {
-    saveLoading.value = false
-  }
-}
-
-const handleDeleteDictionary = async (row) => {
-  try {
-    await api.deleteDictionary(row.id)
-    ElMessage.success('字典类型删除成功')
-    await fetchDictionaries(searchKeyword.value)
-  } catch (error) {
-    console.error('删除字典类型失败:', error)
-    ElMessage.error('删除字典类型失败')
-  }
-}
-
-// 字典项操作
-const handleAddItem = (dictionary) => {
-  resetItemForm()
-  currentDictionary.value = dictionary
-  parentItem.value = null
-  itemForm.dictionary = dictionary.id
-  itemForm.parent = null
-  itemDialogVisible.value = true
-}
-
-const handleAddChildItem = (parentRow, dictionary) => {
-  resetItemForm()
-  currentDictionary.value = dictionary
-  parentItem.value = parentRow
-  itemForm.dictionary = dictionary.id
-  itemForm.parent = parentRow.id
-  itemDialogVisible.value = true
-}
-
-const handleEditItem = (row) => {
-  Object.assign(itemForm, row)
-  currentDictionary.value = dictionariesData.value.find(d => d.id === row.dictionary)
-  if (row.parent) {
-    // 找到父级项目
-    parentItem.value = findItemById(currentDictionary.value.items, row.parent)
-  } else {
-    parentItem.value = null
-  }
-  itemDialogVisible.value = true
-}
-
-const findItemById = (items, id) => {
-  for (const item of items) {
-    if (item.id === id) {
-      return item
-    }
-    if (item.children) {
-      const found = findItemById(item.children, id)
-      if (found) return found
-    }
-  }
-  return null
-}
-
-const handleSaveItem = async () => {
-  try {
-    await itemFormRef.value.validate()
-    saveLoading.value = true
-    
-    if (itemForm.id) {
-      // 更新
-      await api.updateDictionaryItem(itemForm.id, itemForm)
       ElMessage.success('字典项更新成功')
     } else {
       // 创建
-      await api.createDictionaryItem(itemForm)
+      await api.createDictionary(dictionaryForm)
       ElMessage.success('字典项创建成功')
     }
     
-    itemDialogVisible.value = false
-    // 重新加载字典项
-    await fetchDictionaryItems(currentDictionary.value)
+    dictionaryDialogVisible.value = false
+    await handleSearch()
   } catch (error) {
     console.error('保存字典项失败:', error)
     ElMessage.error('保存字典项失败')
@@ -601,12 +593,11 @@ const handleSaveItem = async () => {
   }
 }
 
-const handleDeleteItem = async (row) => {
+const handleDeleteDictionary = async (row) => {
   try {
-    await api.deleteDictionaryItem(row.id)
+    await api.deleteDictionary(row.id)
     ElMessage.success('字典项删除成功')
-    // 重新加载字典项
-    await fetchDictionaryItems(currentDictionary.value)
+    await handleSearch()
   } catch (error) {
     console.error('删除字典项失败:', error)
     ElMessage.error('删除字典项失败')
@@ -657,64 +648,19 @@ onMounted(() => {
   gap: 12px;
 }
 
-.dictionary-name {
+.right-actions {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.dictionary-name .name {
-  font-weight: 500;
-}
-
-.dictionary-name .code {
-  font-family: 'Courier New', monospace;
-}
-
-.dictionary-items {
-  padding: 16px;
-  background-color: #f8f9fa;
-  margin: 0 -20px;
-}
-
-.items-header {
-  display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
 }
 
-.items-header h4 {
-  margin: 0;
-  color: #303133;
-}
-
-.items-table {
-  background-color: white;
-  border-radius: 4px;
-}
-
-.items-table :deep(.el-table__header-wrapper) {
-  background-color: #f5f7fa !important;
-}
-
-.items-table :deep(.el-table__header th) {
-  background-color: #f5f7fa !important;
-  color: #303133 !important;
-  border-bottom: 1px solid #ebeef5;
-}
-
-.items-table :deep(.el-table__header .cell) {
-  color: #303133 !important;
-}
-
-.item-name {
+.dictionary-name {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.item-name .name {
+.dictionary-name .name {
+  font-weight: 500;
   flex: 1;
 }
 
@@ -729,14 +675,27 @@ onMounted(() => {
   margin-top: 4px;
 }
 
+.tree-node {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.node-label {
+  font-weight: 500;
+}
+
+.node-code {
+  color: #909399;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+}
+
 /* 深色模式适配 */
 @media (prefers-color-scheme: dark) {
-  .dictionary-items {
-    background-color: #1a1a1a;
-  }
-  
-  .items-table {
-    background-color: #2d2d2d;
+  .dictionary-management {
+    color: #e4e7ed;
   }
 }
 </style>

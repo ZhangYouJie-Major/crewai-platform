@@ -29,7 +29,7 @@ from .crewai_agent import CrewAIAgent
 from .agent_tool_relation import AgentToolRelation
 
 # 字典管理模型
-from .dictionary import Dictionary, DictionaryItem
+from .dictionary import Dictionary
 
 __all__ = [
     # RBAC模型
@@ -47,5 +47,4 @@ __all__ = [
     
     # 字典管理模型
     'Dictionary',
-    'DictionaryItem',
 ]

@@ -8,7 +8,7 @@ from .views import (
     # CrewAI相关视图
     LLMModelViewSet, MCPToolViewSet, CrewAIAgentViewSet, AgentToolRelationViewSet,
     # 字典管理视图
-    DictionaryViewSet, DictionaryItemViewSet
+    DictionaryViewSet
 )
 
 # 创建路由器实例，用于自动生成RESTful API路由
@@ -28,8 +28,7 @@ router.register(r'crewai-agents', CrewAIAgentViewSet) # CrewAI Agent配置CRUD�
 router.register(r'agent-tool-relations', AgentToolRelationViewSet) # Agent-Tool关联CRUD接口
 
 # 字典管理路由
-router.register(r'dictionaries', DictionaryViewSet)  # 字典类型CRUD接口
-router.register(r'dictionary-items', DictionaryItemViewSet)  # 字典项CRUD接口
+router.register(r'dictionaries', DictionaryViewSet)  # 字典项CRUD接口
 
 urlpatterns = [
     # Django管理后台

@@ -131,17 +131,11 @@ class ApiService {
     create: (dictionaryData) => http.post('/dictionaries/', dictionaryData),
     update: (id, dictionaryData) => http.put(`/dictionaries/${id}/`, dictionaryData),
     delete: (id) => http.delete(`/dictionaries/${id}/`),
-    getItems: (id, params = {}) => http.get(`/dictionaries/${id}/items/`, { params }),
-    getOptions: (params = {}) => http.get('/dictionaries/options/', { params })
-  }
-
-  // 字典项管理API
-  static dictionaryItems = {
-    getList: (params = {}) => http.get('/dictionary-items/', { params }),
-    getById: (id) => http.get(`/dictionary-items/${id}/`),
-    create: (itemData) => http.post('/dictionary-items/', itemData),
-    update: (id, itemData) => http.put(`/dictionary-items/${id}/`, itemData),
-    delete: (id) => http.delete(`/dictionary-items/${id}/`)
+    getChildren: (id) => http.get(`/dictionaries/${id}/children/`),
+    getTree: (params = {}) => http.get('/dictionaries/tree/', { params }),
+    getOptions: (params = {}) => http.get('/dictionaries/options/', { params }),
+    batchCreate: (itemsData) => http.post('/dictionaries/batch_create/', itemsData),
+    getStats: () => http.get('/dictionaries/stats/')
   }
 }
 
@@ -253,15 +247,11 @@ const api = {
   createDictionary: ApiService.dictionaries.create,
   updateDictionary: ApiService.dictionaries.update,
   deleteDictionary: ApiService.dictionaries.delete,
-  getDictionaryItems: ApiService.dictionaries.getItems,
+  getDictionaryChildren: ApiService.dictionaries.getChildren,
+  getDictionaryTree: ApiService.dictionaries.getTree,
   getDictionaryOptions: ApiService.dictionaries.getOptions,
-
-  // 字典项管理
-  getDictionaryItemsList: ApiService.dictionaryItems.getList,
-  getDictionaryItemById: ApiService.dictionaryItems.getById,
-  createDictionaryItem: ApiService.dictionaryItems.create,
-  updateDictionaryItem: ApiService.dictionaryItems.update,
-  deleteDictionaryItem: ApiService.dictionaryItems.delete
+  batchCreateDictionaries: ApiService.dictionaries.batchCreate,
+  getDictionaryStats: ApiService.dictionaries.getStats
 }
 
 export { ApiService }

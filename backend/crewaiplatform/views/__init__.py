@@ -35,7 +35,6 @@ from .crewai_views import (
 # 字典管理相关视图
 from .dictionary_views import (
     DictionaryViewSet,
-    DictionaryItemViewSet,
 )
 
 # 导出所有视图类
@@ -60,5 +59,4 @@ __all__ = [
     
     # 字典管理相关
     'DictionaryViewSet',
-    'DictionaryItemViewSet',
 ]

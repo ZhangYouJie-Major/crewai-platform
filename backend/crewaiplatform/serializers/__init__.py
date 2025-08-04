@@ -45,9 +45,8 @@ from .stats_serializers import (
 # 数据字典序列化器
 from .dictionary_serializers import (
     DictionarySerializer,
-    DictionaryItemSerializer,
-    DictionaryItemSimpleSerializer,
-    DictionaryItemTreeSerializer,
+    DictionarySimpleSerializer,
+    DictionaryTreeSerializer,
     DictionaryOptionsSerializer,
 )
 
@@ -79,8 +78,7 @@ __all__ = [
     
     # 数据字典
     'DictionarySerializer',
-    'DictionaryItemSerializer',
-    'DictionaryItemSimpleSerializer',
-    'DictionaryItemTreeSerializer',
+    'DictionarySimpleSerializer',
+    'DictionaryTreeSerializer',
     'DictionaryOptionsSerializer',
 ]
