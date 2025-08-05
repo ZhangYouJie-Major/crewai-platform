@@ -32,6 +32,7 @@ class LLMModel(models.Model):
         ('huggingface', 'HuggingFace'),
         ('google', 'Google (PaLM/Gemini)'),
         ('cohere', 'Cohere'),
+        ('moonshot', 'Moonshot'),
         ('custom', '自定义'),
     ]
     
@@ -265,12 +266,16 @@ class LLMModel(models.Model):
                 config['openai_api_key'] = decrypted_key
                 config['azure_endpoint'] = self.api_base_url
                 config['api_version'] = self.api_version or '2024-02-01'
+            elif self.provider == 'moonshot':
+                config['openai_api_key'] = decrypted_key
             else:
                 config['api_key'] = decrypted_key
         
         # 添加自定义URL
         if self.api_base_url and self.provider != 'azure_openai':
             if self.provider == 'openai':
+                config['openai_api_base'] = self.api_base_url
+            elif self.provider == 'moonshot':
                 config['openai_api_base'] = self.api_base_url
             else:
                 config['base_url'] = self.api_base_url
@@ -319,12 +324,13 @@ class LLMModel(models.Model):
                 from langchain_cohere import ChatCohere
                 return ChatCohere(**config)
             
+            elif self.provider == 'moonshot':
+                from langchain_openai import ChatOpenAI
+                return ChatOpenAI(**config)
+            
             else:
-                # 自定义提供商，动态导入
-                module_path, class_name = self.langchain_class.rsplit('.', 1)
-                module = __import__(module_path, fromlist=[class_name])
-                model_class = getattr(module, class_name)
-                return model_class(**config)
+                from langchain_openai import ChatOpenAI
+                return ChatOpenAI(**config)
                 
         except Exception as e:
             raise ValueError(f"创建LangChain模型失败: {str(e)}")

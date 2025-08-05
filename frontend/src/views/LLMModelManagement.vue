@@ -439,7 +439,7 @@ const editModel = (model) => {
   isEdit.value = true
   Object.assign(formData, {
     ...model,
-    api_key: '' // 编辑时不显示原密钥
+    api_key: model.api_key || '' // 回显API密钥
   })
   testResult.value = null
   dialogVisible.value = true

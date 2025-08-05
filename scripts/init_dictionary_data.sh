@@ -10,27 +10,11 @@ cd "$(dirname "$0")/../backend"
 
 # 创建Django管理命令来初始化字典数据
 python manage.py shell << 'EOF'
-from crewaiplatform.models import Dictionary, DictionaryItem
+from crewaiplatform.models import Dictionary
 
 print("开始初始化字典数据...")
 
-# 1. 创建LLM供应商字典类型
-llm_provider_dict, created = Dictionary.objects.get_or_create(
-    code='llm_provider',
-    defaults={
-        'name': 'LLM供应商',
-        'description': 'LLM大语言模型提供商分类',
-        'is_active': True,
-        'sort_order': 1
-    }
-)
-
-if created:
-    print(f"创建字典类型: {llm_provider_dict.name}")
-else:
-    print(f"字典类型已存在: {llm_provider_dict.name}")
-
-# 2. 创建供应商数据（一级字典项）
+# 1. 创建LLM供应商字典项（顶级）
 providers_data = [
     {
         'code': 'openai',
@@ -85,8 +69,7 @@ providers_data = [
 # 创建供应商字典项
 provider_items = {}
 for provider_data in providers_data:
-    provider_item, created = DictionaryItem.objects.get_or_create(
-        dictionary=llm_provider_dict,
+    provider_item, created = Dictionary.objects.get_or_create(
         code=provider_data['code'],
         defaults={
             'name': provider_data['name'],
@@ -101,7 +84,7 @@ for provider_data in providers_data:
     else:
         print(f"供应商已存在: {provider_item.name}")
 
-# 3. 创建模型数据（二级字典项）
+# 2. 创建模型数据（二级字典项）
 models_data = {
     'openai': [
         {'code': 'gpt-4', 'name': 'GPT-4', 'description': 'OpenAI最先进的大语言模型', 'sort_order': 1},
@@ -156,8 +139,7 @@ for provider_code, models in models_data.items():
     if provider_code in provider_items:
         parent_item = provider_items[provider_code]
         for model_data in models:
-            model_item, created = DictionaryItem.objects.get_or_create(
-                dictionary=llm_provider_dict,
+            model_item, created = Dictionary.objects.get_or_create(
                 parent=parent_item,
                 code=model_data['code'],
                 defaults={
@@ -175,8 +157,8 @@ for provider_code, models in models_data.items():
 print("字典数据初始化完成！")
 
 # 统计信息
-total_providers = DictionaryItem.objects.filter(dictionary=llm_provider_dict, parent__isnull=True).count()
-total_models = DictionaryItem.objects.filter(dictionary=llm_provider_dict, parent__isnull=False).count()
+total_providers = Dictionary.objects.filter(parent__isnull=True).count()
+total_models = Dictionary.objects.filter(parent__isnull=False).count()
 print(f"总计: {total_providers} 个供应商, {total_models} 个模型")
 
 EOF

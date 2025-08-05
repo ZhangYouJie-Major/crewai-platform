@@ -48,10 +48,10 @@ dependencies = [
     
     # AI Provider 集成
     "langchain-anthropic>=0.3.0",  # Anthropic集成
-    "langchain-ollama>=0.3.0",  # Ollama集成
-    "langchain-huggingface>=0.3.0",  # HuggingFace集成
-    "langchain-google-genai>=0.3.0",  # Google集成
-    "langchain-cohere>=0.3.0",  # Cohere集成
+    "langchain-ollama>=0.3.6",  # Ollama集成
+    "langchain-huggingface>=0.3.1",  # HuggingFace集成
+    "langchain-google-genai>=2.1.9",  # Google集成
+    "langchain-cohere>=0.4.5",  # Cohere集成
     
     # 加密和安全
     "cryptography>=41.0.0",  # 加密库（用于API密钥加密）

@@ -10,9 +10,16 @@ from ..models import LLMModel, MCPTool, CrewAIAgent, AgentToolRelation
 
 class LLMModelSerializer(serializers.ModelSerializer):
     """LLM模型配置序列化器"""
-    api_key = serializers.CharField(write_only=True, help_text="API密钥，仅写入时需要")
+    api_key = serializers.SerializerMethodField(help_text="API密钥")
     is_available_display = serializers.CharField(source='get_is_available_display', read_only=True)
     provider_display = serializers.CharField(source='get_provider_display', read_only=True)
+    
+    def get_api_key(self, obj):
+        """获取API密钥（解密后）"""
+        try:
+            return obj.get_decrypted_api_key()
+        except Exception:
+            return "***"  # 如果解密失败，返回占位符
     
     class Meta:
         model = LLMModel
