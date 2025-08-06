@@ -44,10 +44,18 @@
       </el-form-item>
 
       <el-form-item label="服务器类型" prop="server_type">
-        <el-select v-model="formData.server_type" placeholder="请选择服务器类型" style="width: 100%">
-          <el-option label="SSE (Server-Sent Events)" value="sse" />
-          <el-option label="HTTP (标准HTTP)" value="http" />
-          <el-option label="STDIO (标准输入输出)" value="stdio" />
+        <el-select 
+          v-model="formData.server_type" 
+          placeholder="请选择服务器类型" 
+          style="width: 100%"
+          :loading="serverTypesLoading"
+        >
+          <el-option
+            v-for="serverType in serverTypes"
+            :key="serverType.value"
+            :label="serverType.label"
+            :value="serverType.value"
+          />
         </el-select>
       </el-form-item>
 
@@ -145,7 +153,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch } from 'vue'
+import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import api from '@/services/api'
 
@@ -172,11 +180,15 @@ const formRef = ref(null)
 // 加载状态
 const submitting = ref(false)
 const testing = ref(false)
+const serverTypesLoading = ref(false)
 
 // 认证相关
 const needAuth = ref(false)
 const authToken = ref('')
 const argsString = ref('')
+
+// 服务器类型选项
+const serverTypes = ref([])
 
 // 连接配置
 const connectionConfig = reactive({
@@ -218,11 +230,58 @@ const rules = {
 }
 
 // 监听弹窗显示状态
-watch(() => props.visible, (newVal) => {
+watch(() => props.visible, async (newVal) => {
   if (newVal) {
+    // 先加载服务器类型选项，再初始化表单
+    await loadServerTypes()
     initForm()
   }
 })
+
+// 加载服务器类型选项
+const loadServerTypes = async () => {
+  try {
+    serverTypesLoading.value = true
+    // 获取MCP服务器类型字典选项（树形结构）
+    const response = await api.getDictionaryOptions({ dict_type: 'mcp_server_type' })
+    
+    // 从树形结构中提取子节点
+    // 数据结构：{ items: [{ code: "服务器类型", children: [...] }] }
+    let serverTypeItems = []
+    
+    if (response.data.items && response.data.items.length > 0) {
+      // 查找根节点（服务器类型）
+      const rootNode = response.data.items.find(item => item.code === '服务器类型')
+      if (rootNode && rootNode.children) {
+        serverTypeItems = rootNode.children
+      } else {
+        // 如果没有找到预期的根节点，尝试从所有节点的children中提取
+        response.data.items.forEach(item => {
+          if (item.children && item.children.length > 0) {
+            serverTypeItems.push(...item.children)
+          }
+        })
+      }
+    }
+    
+    // 转换为下拉选项格式
+    serverTypes.value = serverTypeItems.map(item => ({
+      value: item.code,
+      label: item.name
+    }))
+    
+  } catch (error) {
+    console.error('加载服务器类型失败:', error)
+    // 如果API失败，使用默认的服务器类型列表作为后备
+    serverTypes.value = [
+      { value: 'sse', label: 'SSE (Server-Sent Events)' },
+      { value: 'http', label: 'HTTP (标准HTTP)' },
+      { value: 'stdio', label: 'STDIO (标准输入输出)' }
+    ]
+  } finally {
+    serverTypesLoading.value = false
+  }
+}
 
 // 监听参数字符串变化
 watch(argsString, (newVal) => {
@@ -395,6 +454,11 @@ const handleSubmit = async () => {
 const handleCancel = () => {
   emit('update:visible', false)
 }
+
+// 组件挂载时预加载服务器类型
+onMounted(() => {
+  loadServerTypes()
+})
 </script>
 
 <style scoped>

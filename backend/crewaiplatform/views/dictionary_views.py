@@ -22,6 +22,11 @@ class DictionaryViewSet(viewsets.ModelViewSet):
         """获取查询集"""
         queryset = super().get_queryset()
         
+        # 根据字典类型过滤
+        dict_type = self.request.query_params.get('dict_type')
+        if dict_type:
+            queryset = queryset.filter(dict_type=dict_type)
+        
         # 根据父级过滤
         parent_id = self.request.query_params.get('parent_id')
         if parent_id:
@@ -111,11 +116,16 @@ class DictionaryViewSet(viewsets.ModelViewSet):
     def tree(self, request):
         """获取树形结构的字典项"""
         try:
+            # 获取字典类型参数
+            dict_type = request.query_params.get('dict_type')
+            
+            # 构建查询条件
+            query = {'parent__isnull': True, 'is_active': True}
+            if dict_type:
+                query['dict_type'] = dict_type
+            
             # 获取一级项目（根节点）
-            root_items = Dictionary.objects.filter(
-                parent__isnull=True, 
-                is_active=True
-            ).order_by('sort_order', 'name')
+            root_items = Dictionary.objects.filter(**query).order_by('sort_order', 'name')
             
             serializer = DictionaryTreeSerializer(root_items, many=True)
             
@@ -132,18 +142,27 @@ class DictionaryViewSet(viewsets.ModelViewSet):
     def options(self, request):
         """获取字典选项，用于前端下拉选择"""
         try:
+            dict_type = request.query_params.get('dict_type')
             parent_code = request.query_params.get('parent_code')
             
             # 构建查询条件
             query = {'is_active': True}
             
+            # 字典类型过滤
+            if dict_type:
+                query['dict_type'] = dict_type
+            
             if parent_code:
                 # 获取指定父级下的子项目
                 try:
                     parent = Dictionary.objects.get(
-                        code=parent_code, 
+                        code=parent_code,
                         is_active=True
                     )
+                    if dict_type and parent.dict_type != dict_type:
+                        return Response({
+                            'error': f'父级字典项类型不匹配，期望：{dict_type}，实际：{parent.dict_type}'
+                        }, status=status.HTTP_400_BAD_REQUEST)
                     query['parent'] = parent
                 except Dictionary.DoesNotExist:
                     return Response({

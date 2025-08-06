@@ -1,7 +1,7 @@
 """
 数据字典管理序列化器
 
-提供字典项的序列化器，支持树形结构管理
+提供字典项的序列化器，支持分类和树形结构管理
 """
 
 from rest_framework import serializers
@@ -20,12 +20,13 @@ class DictionarySerializer(serializers.ModelSerializer):
     class Meta:
         model = Dictionary
         fields = (
-            'id', 'parent', 'parent_name', 'parent_code',
+            'id', 'dict_type', 'parent', 'parent_name', 'parent_code',
             'code', 'name', 'value', 'description', 'is_active', 'sort_order',
             'full_path', 'level', 'children_count', 'children',
             'created_at', 'updated_at'
         )
         extra_kwargs = {
+            'dict_type': {'help_text': '字典类型，如：llm、mcp_server_type等'},
             'parent': {'help_text': '父级字典项（用于层级结构）'},
             'code': {'help_text': '字典项代码'},
             'name': {'help_text': '字典项名称'},
@@ -60,7 +61,8 @@ class DictionarySerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         """验证字典项数据"""
         parent = attrs.get('parent')
-        code = attrs['code']
+        dict_type = attrs.get('dict_type')
+        code = attrs.get('code')
         
         # 防止循环引用
         if parent and self.instance:
@@ -69,6 +71,12 @@ class DictionarySerializer(serializers.ModelSerializer):
                 if current.id == self.instance.id:
                     raise serializers.ValidationError("不能设置循环引用的父级关系")
                 current = current.parent
+        
+        # 确保父子级的dict_type一致
+        if parent and parent.dict_type != dict_type:
+            raise serializers.ValidationError(
+                f"父级字典项类型为 '{parent.dict_type}'，子级字典项类型必须一致"
+            )
         
         return attrs
     
@@ -88,7 +96,7 @@ class DictionarySimpleSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Dictionary
-        fields = ('id', 'code', 'name', 'sort_order', 'children')
+        fields = ('id', 'dict_type', 'code', 'name', 'sort_order', 'children')
     
     def get_children(self, obj):
         """获取子级项目"""
@@ -104,7 +112,7 @@ class DictionaryTreeSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Dictionary
-        fields = ('id', 'parent', 'parent_name', 'parent_code', 'code', 'name', 'description', 'sort_order', 'is_active', 'children')
+        fields = ('id', 'dict_type', 'parent', 'parent_name', 'parent_code', 'code', 'name', 'description', 'sort_order', 'is_active', 'children')
     
     def get_children(self, obj):
         """递归获取子级项目"""

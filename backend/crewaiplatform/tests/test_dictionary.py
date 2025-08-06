@@ -11,7 +11,7 @@ from rest_framework.test import APITestCase, APIClient
 from rest_framework import status
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from crewaiplatform.models import Dictionary
+from crewaiplatform.models import Dictionary, DictType
 
 User = get_user_model()
 
@@ -22,6 +22,7 @@ class DictionaryModelTest(TestCase):
     def setUp(self):
         """测试数据准备"""
         self.parent_dict = Dictionary.objects.create(
+            dict_type=DictType.LLM,
             code='llm_provider',
             name='LLM供应商',
             description='大语言模型供应商',
@@ -30,6 +31,7 @@ class DictionaryModelTest(TestCase):
         )
         
         self.child_dict = Dictionary.objects.create(
+            dict_type=DictType.LLM,
             parent=self.parent_dict,
             code='openai',
             name='OpenAI',
@@ -41,6 +43,7 @@ class DictionaryModelTest(TestCase):
     
     def test_dictionary_creation(self):
         """测试字典项创建"""
+        self.assertEqual(self.parent_dict.dict_type, DictType.LLM)
         self.assertEqual(self.parent_dict.code, 'llm_provider')
         self.assertEqual(self.parent_dict.name, 'LLM供应商')
         self.assertIsNone(self.parent_dict.parent)
@@ -69,8 +72,8 @@ class DictionaryModelTest(TestCase):
     
     def test_str_representation(self):
         """测试字符串表示"""
-        self.assertEqual(str(self.parent_dict), 'LLM供应商')
-        self.assertEqual(str(self.child_dict), 'LLM供应商 -> OpenAI')
+        self.assertEqual(str(self.parent_dict), f'[{DictType.LLM}] LLM供应商')
+        self.assertEqual(str(self.child_dict), f'[{DictType.LLM}] LLM供应商 -> OpenAI')
 
 
 class DictionaryAPITest(APITestCase):
@@ -92,6 +95,7 @@ class DictionaryAPITest(APITestCase):
         
         # 创建测试数据
         self.parent_dict = Dictionary.objects.create(
+            dict_type=DictType.MCP_SERVER_TYPE,
             code='test_parent',
             name='测试父级',
             description='测试父级字典项',
@@ -100,6 +104,7 @@ class DictionaryAPITest(APITestCase):
         )
         
         self.child_dict = Dictionary.objects.create(
+            dict_type=DictType.MCP_SERVER_TYPE,
             parent=self.parent_dict,
             code='test_child',
             name='测试子级',
@@ -129,6 +134,7 @@ class DictionaryAPITest(APITestCase):
         """测试创建字典项"""
         url = reverse('dictionary-list')
         data = {
+            'dict_type': DictType.AGENT_ROLE,
             'code': 'new_dict',
             'name': '新字典项',
             'description': '新创建的字典项',
@@ -138,17 +144,20 @@ class DictionaryAPITest(APITestCase):
         response = self.client.post(url, data, format='json')
         
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['dict_type'], DictType.AGENT_ROLE)
         self.assertEqual(response.data['code'], 'new_dict')
         self.assertEqual(response.data['name'], '新字典项')
         
         # 验证数据库中的记录
         new_dict = Dictionary.objects.get(code='new_dict')
+        self.assertEqual(new_dict.dict_type, DictType.AGENT_ROLE)
         self.assertEqual(new_dict.name, '新字典项')
     
     def test_create_child_dictionary(self):
         """测试创建子级字典项"""
         url = reverse('dictionary-list')
         data = {
+            'dict_type': DictType.MCP_SERVER_TYPE,
             'parent': self.parent_dict.id,
             'code': 'new_child',
             'name': '新子级项',
@@ -159,6 +168,7 @@ class DictionaryAPITest(APITestCase):
         response = self.client.post(url, data, format='json')
         
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['dict_type'], DictType.MCP_SERVER_TYPE)
         self.assertEqual(response.data['parent'], self.parent_dict.id)
         self.assertEqual(response.data['code'], 'new_child')
     
@@ -381,6 +391,141 @@ class DictionaryAPITest(APITestCase):
         
         # 应该返回验证错误
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+    
+    def test_filter_by_dict_type(self):
+        """测试根据字典类型筛选"""
+        # 创建不同类型的字典项
+        Dictionary.objects.create(
+            dict_type=DictType.LLM,
+            code='llm_test',
+            name='LLM测试',
+            description='LLM类型测试项',
+            sort_order=1,
+            is_active=True
+        )
+        
+        Dictionary.objects.create(
+            dict_type=DictType.AGENT_ROLE,
+            code='agent_test',
+            name='Agent测试',
+            description='Agent类型测试项',
+            sort_order=1,
+            is_active=True
+        )
+        
+        url = reverse('dictionary-list')
+        
+        # 测试按LLM类型筛选
+        response = self.client.get(url, {'dict_type': DictType.LLM})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        llm_items = [item for item in response.data if item['dict_type'] == DictType.LLM]
+        self.assertEqual(len(llm_items), 1)
+        self.assertEqual(llm_items[0]['code'], 'llm_test')
+        
+        # 测试按MCP类型筛选
+        response = self.client.get(url, {'dict_type': DictType.MCP_SERVER_TYPE})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        mcp_items = [item for item in response.data if item['dict_type'] == DictType.MCP_SERVER_TYPE]
+        self.assertEqual(len(mcp_items), 2)  # parent_dict 和 child_dict
+    
+    def test_get_tree_with_dict_type_filter(self):
+        """测试按字典类型获取树形结构"""
+        # 创建不同类型的数据
+        llm_root = Dictionary.objects.create(
+            dict_type=DictType.LLM,
+            code='openai',
+            name='OpenAI',
+            description='OpenAI供应商',
+            sort_order=1,
+            is_active=True
+        )
+        
+        Dictionary.objects.create(
+            dict_type=DictType.LLM,
+            parent=llm_root,
+            code='gpt-4',
+            name='GPT-4',
+            description='GPT-4模型',
+            sort_order=1,
+            is_active=True
+        )
+        
+        url = reverse('dictionary-tree')
+        
+        # 测试获取LLM类型的树
+        response = self.client.get(url, {'dict_type': DictType.LLM})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        
+        tree = response.data['tree']
+        llm_nodes = [node for node in tree if node['dict_type'] == DictType.LLM]
+        self.assertEqual(len(llm_nodes), 1)
+        self.assertEqual(llm_nodes[0]['code'], 'openai')
+        self.assertEqual(len(llm_nodes[0]['children']), 1)
+        
+        # 测试获取MCP类型的树
+        response = self.client.get(url, {'dict_type': DictType.MCP_SERVER_TYPE})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        
+        tree = response.data['tree']
+        mcp_nodes = [node for node in tree if node['dict_type'] == DictType.MCP_SERVER_TYPE]
+        self.assertEqual(len(mcp_nodes), 1)
+        self.assertEqual(mcp_nodes[0]['code'], 'test_parent')
+    
+    def test_get_options_with_dict_type_filter(self):
+        """测试按字典类型获取选项"""
+        # 创建不同类型的数据
+        Dictionary.objects.create(
+            dict_type=DictType.AGENT_ROLE,
+            code='researcher',
+            name='研究员',
+            description='研究员角色',
+            sort_order=1,
+            is_active=True
+        )
+        
+        Dictionary.objects.create(
+            dict_type=DictType.AGENT_ROLE,
+            code='analyst',
+            name='分析师',
+            description='分析师角色',
+            sort_order=2,
+            is_active=True
+        )
+        
+        url = reverse('dictionary-options')
+        
+        # 测试获取Agent角色类型的选项
+        response = self.client.get(url, {'dict_type': DictType.AGENT_ROLE})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        
+        items = response.data['items']
+        agent_items = [item for item in items if 'researcher' in item['code'] or 'analyst' in item['code']]
+        self.assertEqual(len(agent_items), 2)
+        
+        # 验证只返回指定类型的数据
+        for item in items:
+            dict_obj = Dictionary.objects.get(id=item['id'])
+            self.assertEqual(dict_obj.dict_type, DictType.AGENT_ROLE)
+    
+    def test_dict_type_validation(self):
+        """测试字典类型验证"""
+        url = reverse('dictionary-list')
+        
+        # 测试父子级dict_type不一致的情况
+        data = {
+            'dict_type': DictType.LLM,  # 父级是MCP_SERVER_TYPE
+            'parent': self.parent_dict.id,
+            'code': 'invalid_child',
+            'name': '无效子级',
+            'description': '类型不一致的子级',
+            'sort_order': 1,
+            'is_active': True
+        }
+        response = self.client.post(url, data, format='json')
+        
+        # 应该返回验证错误
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('父级字典项类型', str(response.data))
 
 
 class DictionaryIntegrationTest(APITestCase):
@@ -403,6 +548,7 @@ class DictionaryIntegrationTest(APITestCase):
         # 1. 创建根级字典项
         create_url = reverse('dictionary-list')
         root_data = {
+            'dict_type': DictType.SYSTEM_STATUS,
             'code': 'workflow_root',
             'name': '工作流根项',
             'description': '集成测试根项',
@@ -415,6 +561,7 @@ class DictionaryIntegrationTest(APITestCase):
         
         # 2. 创建子级字典项
         child_data = {
+            'dict_type': DictType.SYSTEM_STATUS,
             'parent': root_id,
             'code': 'workflow_child',
             'name': '工作流子项',
@@ -446,6 +593,7 @@ class DictionaryIntegrationTest(APITestCase):
         # 6. 更新项目
         update_url = reverse('dictionary-detail', kwargs={'pk': child_id})
         update_data = {
+            'dict_type': DictType.SYSTEM_STATUS,
             'parent': root_id,
             'code': 'workflow_child',
             'name': '更新后的子项',

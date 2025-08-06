@@ -20,7 +20,6 @@ from .models import (
     
     # 字典管理模型
     Dictionary,
-    DictionaryItem,
 )
 
 # 为了向后兼容，保持原有的导入方式
@@ -40,5 +39,4 @@ __all__ = [
     
     # 字典管理模型
     'Dictionary',
-    'DictionaryItem',
 ]

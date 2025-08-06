@@ -374,11 +374,21 @@ INSERT INTO dictionary (parent_id, code, name, description, sort_order) VALUES
 ((SELECT id FROM dictionary WHERE code = 'llm_provider'), 'alibaba', '阿里云', '阿里云提供的通义千问系列模型', 5)
 ON CONFLICT (parent_id, code) DO NOTHING;
 
--- 3.9 插入MCP服务器类型字典项
+-- 3.9 插入MCP服务器类型字典项（二级结构）
+
+-- 3.9.1 插入一级分类
 INSERT INTO dictionary (parent_id, code, name, description, sort_order) VALUES
-((SELECT id FROM dictionary WHERE code = 'mcp_server_type'), 'stdio', 'Standard I/O', '基于标准输入输出的MCP服务器', 1),
-((SELECT id FROM dictionary WHERE code = 'mcp_server_type'), 'sse', 'Server-Sent Events', '基于HTTP流式传输的MCP服务器', 2),
-((SELECT id FROM dictionary WHERE code = 'mcp_server_type'), 'http', 'HTTP', '基于HTTP请求响应的MCP服务器', 3)
+((SELECT id FROM dictionary WHERE code = 'mcp_server_type'), 'local', '本地通信', '基于本地进程通信的MCP服务器', 1),
+((SELECT id FROM dictionary WHERE code = 'mcp_server_type'), 'network', '网络通信', '基于网络协议的MCP服务器', 2)
+ON CONFLICT (parent_id, code) DO NOTHING;
+
+-- 3.9.2 插入二级具体类型
+INSERT INTO dictionary (parent_id, code, name, description, sort_order) VALUES
+-- 本地通信类型
+((SELECT id FROM dictionary WHERE code = 'local' AND parent_id = (SELECT id FROM dictionary WHERE code = 'mcp_server_type')), 'stdio', 'Standard I/O', '基于标准输入输出的MCP服务器', 1),
+-- 网络通信类型
+((SELECT id FROM dictionary WHERE code = 'network' AND parent_id = (SELECT id FROM dictionary WHERE code = 'mcp_server_type')), 'sse', 'Server-Sent Events', '基于HTTP流式传输的MCP服务器', 1),
+((SELECT id FROM dictionary WHERE code = 'network' AND parent_id = (SELECT id FROM dictionary WHERE code = 'mcp_server_type')), 'http', 'HTTP', '基于HTTP请求响应的MCP服务器', 2)
 ON CONFLICT (parent_id, code) DO NOTHING;
 
 -- ==========================================

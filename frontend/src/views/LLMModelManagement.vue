@@ -408,8 +408,8 @@ const showCreateDialog = () => {
 const loadProviders = async () => {
   try {
     providersLoading.value = true
-    // 获取LLM供应商字典选项
-    const response = await api.getDictionaryOptions({ code: 'llm_provider' })
+    // 获取LLM供应商字典选项 - 使用新的字典类型API
+    const response = await api.getDictionaryOptions({ dict_type: 'llm' })
     
     // 转换数据格式为下拉选项格式
     providers.value = response.data.items.map(item => ({
@@ -477,9 +477,9 @@ const handleProviderChange = async (provider) => {
   try {
     fetchingAvailableModels.value = true
     
-    // 从字典API获取该供应商下的模型选项
+    // 从字典API获取该供应商下的模型选项 - 使用新的字典类型API
     const response = await api.getDictionaryOptions({ 
-      code: 'llm_provider',
+      dict_type: 'llm',
       parent_code: provider
     })
     

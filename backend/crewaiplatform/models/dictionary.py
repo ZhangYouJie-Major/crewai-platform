@@ -1,28 +1,49 @@
 """
 字典管理模型
 
-简化的单级字典结构：
-- Dictionary: 字典项，支持层级关系（通过parent字段实现）
+支持分类的层级字典结构：
+- Dictionary: 字典项，支持层级关系和类型分类
 
 设计支持：
-1. 层级关系：通过parent自关联实现多级结构
-2. 数据规范化：统一管理下拉选项
-3. 扩展性：可支持更多类型的字典配置
+1. 类型分类：通过dict_type字段区分不同用途的字典树（完全开放）
+2. 层级关系：通过parent自关联实现多级结构
+3. 数据规范化：统一管理各类下拉选项
+4. 扩展性：可支持任意类型的字典配置
 """
 
 from django.db import models
 from django.core.validators import RegexValidator
+from django.core.exceptions import ValidationError
+
+
+# 字典类型常量（用于代码中引用，不限制数据库）
+class DictType:
+    """字典类型常量定义"""
+    LLM = 'llm'                        # LLM供应商和模型的完整树
+    MCP_SERVER_TYPE = 'mcp_server_type' # MCP服务器类型枚举
+    AGENT_ROLE = 'agent_role'          # Agent角色类型枚举
+    SYSTEM_STATUS = 'system_status'     # 系统状态枚举
+    TASK_PRIORITY = 'task_priority'     # 任务优先级枚举
 
 
 class Dictionary(models.Model):
     """
-    字典模型 - 支持层级结构的字典项
+    字典模型 - 支持分类和层级结构的字典项
     
     可用于存储各种字典数据，如：
-    - 供应商：OpenAI、Google等
-    - 模型：gpt-4、gemini-pro等（通过parent关联到供应商）
-    - 其他分类数据
+    - LLM配置：供应商（OpenAI、Google等）和模型（gpt-4、gemini-pro等）
+    - MCP服务器类型：filesystem、database、api等
+    - Agent角色类型：研究员、分析师、写作助手等
+    - 其他任意分类数据
     """
+    
+    # 字典类型（完全开放，不限制选择）
+    dict_type = models.CharField(
+        max_length=50,
+        default='general',  # 为现有数据提供默认值
+        verbose_name='字典类型',
+        help_text='字典数据的分类类型，如：llm、mcp_server_type、agent_role等'
+    )
     
     # 父级字典项（支持多级结构）
     parent = models.ForeignKey(
@@ -87,12 +108,16 @@ class Dictionary(models.Model):
         db_table = 'sys_dictionary'
         verbose_name = '字典项'
         verbose_name_plural = '字典项'
-        ordering = ['sort_order', 'created_at']
+        ordering = ['dict_type', 'sort_order', 'created_at']
+        # 同一类型下的同一层级中code唯一
+        unique_together = [
+            ('dict_type', 'parent', 'code'),
+        ]
         
     def __str__(self):
         if self.parent:
-            return f"{self.parent.name} -> {self.name}"
-        return self.name
+            return f"[{self.dict_type}] {self.parent.name} -> {self.name}"
+        return f"[{self.dict_type}] {self.name}"
     
     def get_full_path(self):
         """获取完整路径，用于显示层级关系"""
@@ -109,3 +134,22 @@ class Dictionary(models.Model):
         if self.parent:
             return self.parent.get_level() + 1
         return 1
+    
+    def clean(self):
+        """模型数据验证"""
+        super().clean()
+        
+        # 防止循环引用
+        if self.parent and self.pk:
+            current = self.parent
+            while current:
+                if current.pk == self.pk:
+                    raise ValidationError("不能设置循环引用的父级关系")
+                current = current.parent
+        
+        # 确保父子级的dict_type一致
+        if self.parent and self.parent.dict_type != self.dict_type:
+            raise ValidationError(
+                f"父级字典项类型为 '{self.parent.dict_type}'，"
+                f"子级字典项类型必须一致，不能为 '{self.dict_type}'"
+            )

@@ -85,7 +85,7 @@ else:
             "NAME": os.environ.get('DB_NAME', 'crewai_db'),
             "USER": os.environ.get('DB_USER', 'crewai'),
             "PASSWORD": os.environ.get('DB_PASSWORD', '123456'),
-            "HOST": os.environ.get('DB_HOST', 'localhost'),
+            "HOST": os.environ.get('DB_HOST', '127.0.0.1'),
             "PORT": os.environ.get('DB_PORT', '5432'),
         }
     }
