@@ -598,13 +598,42 @@ class AgentToolRelationViewSet(viewsets.ModelViewSet):
         status_filter = self.request.query_params.get('status')
         if status_filter:
             queryset = queryset.filter(status=status_filter)
-        
-        # 用户权限过滤
-        user = self.request.user
-        if not user.is_superuser:
-            queryset = queryset.filter(agent__owner=user)
-        
+
         return queryset
+
+    def destroy(self, request, *args, **kwargs):
+        """解绑Agent-Tool"""
+        try:
+            relation_id = kwargs.get('pk')
+            relation = AgentToolRelation.objects.get(id=relation_id)
+            relation.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except AgentToolRelation.DoesNotExist:
+            return Response({
+                'success': False,
+                'error': '指定的关联不存在或无权访问。'
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({
+                'success': False,
+                'error': f'解绑失败: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=False, methods=['get'])
+    def agent_tools(self, request):
+        """
+            获取指定Agent的所有工具关联（包含详细工具信息）
+        """
+        agent_id = request.query_params.get('agent_id')
+        if not agent_id:
+            return Response({'error': '缺少agent_id参数'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            relations = AgentToolRelation.objects.filter(agent_id=agent_id).select_related('tool')
+            serializer = AgentToolRelationSerializer(relations, many=True)
+            return Response(serializer.data)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     @action(detail=True, methods=['post'])
     def test_connection(self, request, pk=None):

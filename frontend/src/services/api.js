@@ -120,6 +120,7 @@ class ApiService {
     testConnection: (id) => http.post(`/agent-tool-relations/${id}/test-connection/`),
     activate: (id) => http.post(`/agent-tool-relations/${id}/activate/`),
     deactivate: (id) => http.post(`/agent-tool-relations/${id}/deactivate/`),
+    getAgentTools: (agentId) => http.get('/agent-tool-relations/agent_tools/', { params: { agent_id: agentId } }),
     getHighUsage: (params = {}) => http.get('/agent-tool-relations/high-usage/', { params }),
     getProblematic: (params = {}) => http.get('/agent-tool-relations/problematic/', { params })
   }
@@ -238,6 +239,7 @@ const api = {
   testAgentToolConnection: ApiService.agentToolRelations.testConnection,
   activateAgentToolRelation: ApiService.agentToolRelations.activate,
   deactivateAgentToolRelation: ApiService.agentToolRelations.deactivate,
+  getAgentTools: ApiService.agentToolRelations.getAgentTools,
   getHighUsageAgentToolRelations: ApiService.agentToolRelations.getHighUsage,
   getProblematicAgentToolRelations: ApiService.agentToolRelations.getProblematic,
 

@@ -139,7 +139,7 @@ const loadCurrentBindings = async () => {
   
   try {
     loading.value = true
-    const response = await api.getAgentToolRelations({ agent_id: props.agentId })
+    const response = await api.getAgentTools(props.agentId)
     const relations = response.data.results || response.data || []
     currentBindings.value = relations.sort((a, b) => a.order - b.order)
     console.log('加载到的工具绑定:', relations)

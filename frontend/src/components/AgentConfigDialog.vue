@@ -572,7 +572,7 @@ export default {
       if (!this.agent?.id) return
       
       try {
-        const { data } = await api.getAgentToolRelations({ agent_id: this.agent.id })
+        const { data } = await api.getAgentTools(this.agent.id)
         this.boundTools = data.results || []
       } catch (error) {
         console.error('Load bound tools error:', error)

@@ -271,7 +271,7 @@ class CrewAIAgentSimpleSerializer(serializers.ModelSerializer):
 class AgentToolRelationSerializer(serializers.ModelSerializer):
     """Agent-Tool关联序列化器"""
     agent_info = CrewAIAgentSimpleSerializer(source='agent', read_only=True)
-    tool_info = MCPToolSimpleSerializer(source='tool', read_only=True)
+    tool_info = MCPToolSerializer(source='tool', read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     permission_level_display = serializers.CharField(source='get_permission_level_display', read_only=True)
     success_rate = serializers.SerializerMethodField()
