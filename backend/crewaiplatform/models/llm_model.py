@@ -33,6 +33,7 @@ class LLMModel(models.Model):
         ('google', 'Google (PaLM/Gemini)'),
         ('cohere', 'Cohere'),
         ('moonshot', 'Moonshot'),
+        ('qwen', 'qwen'),
         ('custom', '自定义'),
     ]
     
@@ -269,7 +270,7 @@ class LLMModel(models.Model):
             elif self.provider == 'moonshot':
                 config['openai_api_key'] = decrypted_key
             else:
-                config['api_key'] = decrypted_key
+                config['openai_api_key'] = decrypted_key
         
         # 添加自定义URL
         if self.api_base_url and self.provider != 'azure_openai':
