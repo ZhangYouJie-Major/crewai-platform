@@ -37,6 +37,14 @@ from .dictionary_views import (
     DictionaryViewSet,
 )
 
+# 聊天功能相关视图
+from .chat_views import (
+    ChatConversationViewSet,
+    ChatMessageViewSet,
+    ChatAgentTaskViewSet,
+    AgentSelectionViewSet,
+)
+
 # 导出所有视图类
 __all__ = [
     # 认证相关
@@ -59,4 +67,10 @@ __all__ = [
     
     # 字典管理相关
     'DictionaryViewSet',
+    
+    # 聊天功能相关
+    'ChatConversationViewSet',
+    'ChatMessageViewSet',
+    'ChatAgentTaskViewSet',
+    'AgentSelectionViewSet',
 ]

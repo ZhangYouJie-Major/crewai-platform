@@ -8,7 +8,9 @@ from .views import (
     # CrewAI相关视图
     LLMModelViewSet, MCPToolViewSet, CrewAIAgentViewSet, AgentToolRelationViewSet,
     # 字典管理视图
-    DictionaryViewSet
+    DictionaryViewSet,
+    # 聊天功能视图
+    ChatConversationViewSet, ChatMessageViewSet, ChatAgentTaskViewSet, AgentSelectionViewSet
 )
 
 # 创建路由器实例，用于自动生成RESTful API路由
@@ -29,6 +31,12 @@ router.register(r'agent-tool-relations', AgentToolRelationViewSet) # Agent-Tool�
 
 # 字典管理路由
 router.register(r'dictionaries', DictionaryViewSet)  # 字典项CRUD接口
+
+# 聊天功能路由
+router.register(r'chat/conversations', ChatConversationViewSet, basename='chat-conversations')  # 聊天会话CRUD接口
+router.register(r'chat/messages', ChatMessageViewSet, basename='chat-messages')  # 聊天消息接口
+router.register(r'chat/tasks', ChatAgentTaskViewSet, basename='chat-tasks')  # Agent任务接口
+router.register(r'chat/agents', AgentSelectionViewSet, basename='chat-agents')  # Agent选择接口
 
 urlpatterns = [
     # Django管理后台

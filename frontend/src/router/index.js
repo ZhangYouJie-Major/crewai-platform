@@ -11,6 +11,7 @@ import LLMModelManagement from '../views/LLMModelManagement.vue'
 import AgentManagement from '../views/AgentManagement.vue'
 import DictionaryManagement from '../views/DictionaryManagement.vue'
 import MCPToolManagement from '../views/MCPToolManagement.vue'
+import ChatInterface from '../views/ChatInterface.vue'
 
 // 检查是否已登录
 const isAuthenticated = () => {
@@ -56,6 +57,7 @@ const routes = [
       { path: '/agents', component: AgentManagement },
       { path: '/mcp-tools', component: MCPToolManagement },
       { path: '/dictionaries', component: DictionaryManagement },
+      { path: '/chat', component: ChatInterface },
     ]
   },
 ]

@@ -4,6 +4,31 @@ import http from '../http'
  * API服务类 - 统一管理所有API调用
  */
 class ApiService {
+  // 聊天功能API
+  static chat = {
+    // 会话管理
+    getConversations: (params = {}) => http.get('/chat/conversations/', { params }),
+    getConversation: (id) => http.get(`/chat/conversations/${id}/`),
+    createConversation: (data) => http.post('/chat/conversations/', data),
+    updateConversation: (id, data) => http.put(`/chat/conversations/${id}/`, data),
+    deleteConversation: (id) => http.delete(`/chat/conversations/${id}/`),
+    archiveConversation: (id) => http.post(`/chat/conversations/${id}/archive/`),
+    
+    // 消息管理
+    getMessages: (conversationId, params = {}) => http.get(`/chat/conversations/${conversationId}/messages/`, { params }),
+    sendMessage: (conversationId, data) => http.post(`/chat/conversations/${conversationId}/send_message/`, data),
+    retryMessage: (messageId) => http.post(`/chat/messages/${messageId}/retry/`),
+    
+    // 任务管理
+    getActiveTasks: (conversationId) => http.get(`/chat/conversations/${conversationId}/active_tasks/`),
+    cancelTask: (taskId) => http.post(`/chat/tasks/${taskId}/cancel/`),
+    
+    // Agent选择
+    getAvailableAgents: (params = {}) => http.get('/chat/agents/available/', { params }),
+    
+    // 统计信息
+    getStats: () => http.get('/chat/conversations/stats/')
+  }
   // 认证相关API
   static auth = {
     register: (userData) => http.post('/auth/register/', userData),

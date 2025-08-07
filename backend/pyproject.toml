@@ -21,6 +21,10 @@ dependencies = [
     # 跨域支持
     "django-cors-headers>=4.0.0",
     
+    # WebSocket支持
+    "channels>=4.0.0",
+    "channels-redis>=4.1.0",
+    
     # 缓存支持（可选）
     "django-redis>=5.2.0",
     

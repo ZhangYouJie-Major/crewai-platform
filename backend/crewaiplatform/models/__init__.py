@@ -31,6 +31,11 @@ from .agent_tool_relation import AgentToolRelation
 # 字典管理模型
 from .dictionary import Dictionary, DictType
 
+# 聊天功能模型
+from .chat_conversation import ChatConversation
+from .chat_message import ChatMessage
+from .chat_agent_task import ChatAgentTask
+
 __all__ = [
     # RBAC模型
     'User',
@@ -48,4 +53,9 @@ __all__ = [
     # 字典管理模型
     'Dictionary',
     'DictType',
+    
+    # 聊天功能模型
+    'ChatConversation',
+    'ChatMessage',
+    'ChatAgentTask',
 ]

@@ -37,6 +37,11 @@
               <span>仪表盘</span>
             </el-menu-item>
             
+            <el-menu-item index="/chat">
+              <el-icon><ChatDotRound /></el-icon>
+              <span>智能对话</span>
+            </el-menu-item>
+            
             <!-- RBAC 权限管理 -->
             <el-sub-menu index="rbac">
               <template #title>
@@ -121,7 +126,8 @@ import {
   Connection,
   Monitor,
   Document,
-  Tools
+  Tools,
+  ChatDotRound
 } from '@element-plus/icons-vue'
 
 const router = useRouter()

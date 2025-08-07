@@ -26,6 +26,15 @@ from .llm_service import LLMService
 from .mcp_service import MCPService
 from .agent_service import AgentService
 
+# 聊天服务
+from .chat_service import (
+    ChatService,
+    ChatMessageService,
+    ChatAgentTaskService,
+    ChatStatsService
+)
+from .simple_agent_service import SimpleAgentService, MockAgentService
+
 __all__ = [
     # RBAC服务
     'AuthService',
@@ -38,4 +47,12 @@ __all__ = [
     'LLMService',
     'MCPService',
     'AgentService',
+    
+    # 聊天服务
+    'ChatService',
+    'ChatMessageService',
+    'ChatAgentTaskService',
+    'ChatStatsService',
+    'SimpleAgentService',
+    'MockAgentService',
 ]

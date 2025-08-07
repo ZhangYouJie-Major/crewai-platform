@@ -50,6 +50,18 @@ from .dictionary_serializers import (
     DictionaryOptionsSerializer,
 )
 
+# 聊天功能序列化器
+from .chat_serializers import (
+    ChatConversationSerializer,
+    ChatConversationCreateSerializer,
+    ChatMessageSerializer,
+    ChatMessageCreateSerializer,
+    ChatAgentTaskSerializer,
+    AgentSimpleSerializer,
+    ChatStatsSerializer,
+    ConversationStatsSerializer,
+)
+
 __all__ = [
     # 认证和用户
     'UserRegisterSerializer',
@@ -81,4 +93,14 @@ __all__ = [
     'DictionarySimpleSerializer',
     'DictionaryTreeSerializer',
     'DictionaryOptionsSerializer',
+    
+    # 聊天功能
+    'ChatConversationSerializer',
+    'ChatConversationCreateSerializer',
+    'ChatMessageSerializer',
+    'ChatMessageCreateSerializer',
+    'ChatAgentTaskSerializer',
+    'AgentSimpleSerializer',
+    'ChatStatsSerializer',
+    'ConversationStatsSerializer',
 ]

@@ -31,6 +31,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "rest_framework_simplejwt",
     "corsheaders",  # 跨域支持
+    "channels",  # WebSocket支持
     
     # 本地应用
     "crewaiplatform",
@@ -66,6 +67,7 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = "crewaiplatform.wsgi.application"
+ASGI_APPLICATION = "crewaiplatform.asgi.application"
 
 # Database configuration
 # 支持多种数据库配置方式
@@ -196,6 +198,22 @@ LOGGING = {
             'level': os.environ.get('APP_LOG_LEVEL', 'DEBUG'),
             'propagate': False,
         },
+    },
+}
+
+# Channels配置
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            "hosts": [(
+                os.environ.get('REDIS_HOST', '127.0.0.1'), 
+                int(os.environ.get('REDIS_PORT', 6379))
+            )],
+        },
+    } if os.environ.get('REDIS_URL') or os.environ.get('REDIS_HOST') else {
+        # 开发环境使用内存通道层
+        'BACKEND': 'channels.layers.InMemoryChannelLayer'
     },
 }
 
