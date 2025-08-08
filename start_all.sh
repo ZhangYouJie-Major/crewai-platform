@@ -38,9 +38,9 @@ fi
 
 # 启动后端服务
 start_backend() {
-    echo "启动后端服务..."
+    echo "启动后端服务 (WebSocket支持)..."
     cd backend
-    ./start.sh
+    ./start_websocket.sh
 }
 
 # 启动前端服务
@@ -69,8 +69,9 @@ if [ "$PARALLEL_MODE" = true ]; then
     
     echo "========================================="
     echo "服务启动完成!"
-    echo "后端服务: http://127.0.0.1:8000"
+    echo "后端服务: http://127.0.0.1:8000 (WebSocket支持)"
     echo "前端服务: http://localhost:5173"
+    echo "WebSocket地址: ws://127.0.0.1:8000/ws/"
     echo "========================================="
     
     # 等待子进程

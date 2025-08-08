@@ -24,6 +24,8 @@ dependencies = [
     # WebSocket支持
     "channels>=4.0.0",
     "channels-redis>=4.1.0",
+    "daphne>=4.0.0",  # ASGI服务器，支持WebSocket
+    "uvicorn>=0.24.0",  # 替代ASGI服务器，对调试更友好
     
     # 缓存支持（可选）
     "django-redis>=5.2.0",

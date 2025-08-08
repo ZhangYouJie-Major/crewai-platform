@@ -14,6 +14,9 @@ from django.core.validators import MinValueValidator, MaxValueValidator
 from django.core.exceptions import ValidationError
 from .llm_model import LLMModel
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class CrewAIAgent(models.Model):
@@ -453,24 +456,64 @@ class CrewAIAgent(models.Model):
     
     def start(self):
         """启动Agent"""
+        logger.info(f"开始启动Agent: {self.name} (状态: {self.status})")
+        
         if self.status in ['running']:
+            logger.warning(f"Agent {self.name} 已在运行中")
             return False, "Agent已在运行中"
         
         try:
+            logger.info(f"验证Agent {self.name} 配置...")
             # 验证配置
             self.clean()
+            logger.info(f"Agent {self.name} 配置验证成功")
+            
+            # 检查LLM模型可用性
+            if not self.llm_model.is_available:
+                error_msg = f"主要LLM模型 {self.llm_model.name} 不可用"
+                logger.error(error_msg)
+                self.status = 'error'
+                self.last_error = error_msg
+                self.save()
+                return False, error_msg
+            
+            if self.function_calling_llm and not self.function_calling_llm.is_available:
+                error_msg = f"工具调用LLM模型 {self.function_calling_llm.name} 不可用"
+                logger.error(error_msg)
+                self.status = 'error'
+                self.last_error = error_msg
+                self.save()
+                return False, error_msg
+            
+            # 测试创建Agent实例
+            logger.info(f"测试创建Agent {self.name} 实例...")
+            try:
+                agent = self.create_crewai_agent()
+                logger.info(f"Agent {self.name} 实例创建成功")
+            except Exception as e:
+                error_msg = f"创建Agent实例失败: {str(e)}"
+                logger.error(error_msg)
+                self.status = 'error'
+                self.last_error = error_msg
+                self.save()
+                return False, error_msg
             
             # 更新状态
             self.status = 'active'
+            self.last_error = ""
             self.save()
             
-            return True, "Agent启动成功"
+            success_msg = "Agent启动成功"
+            logger.info(f"Agent {self.name} {success_msg}")
+            return True, success_msg
             
         except Exception as e:
+            error_msg = f"启动Agent失败: {str(e)}"
+            logger.error(f"Agent {self.name} {error_msg}")
             self.status = 'error'
-            self.last_error = str(e)
+            self.last_error = error_msg
             self.save()
-            return False, str(e)
+            return False, error_msg
     
     def stop(self):
         """停止Agent"""

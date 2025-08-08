@@ -20,6 +20,61 @@
 | 🤖 Agent管理测试 | `test_agent_management.py` | Agent的CRUD操作、克隆、启用/禁用等功能测试 |
 | 🔧 MCP工具管理测试 | `test_mcp_tool_management.py` | MCP工具的CRUD操作、健康检查等功能测试 |
 | 📚 字典管理测试 | `test_dictionary_management.py` | 字典的CRUD操作、树结构、父子关系等功能测试 |
+| 💬 WebSocket功能测试 | `test_websocket_functionality.py` | WebSocket配置、路由、Consumer类等功能验证 |
+| 🔄 流式对话集成测试 | `test_streaming_integration.py` | 完整的WebSocket流式对话流程集成测试 |
+
+### WebSocket测试套件
+
+**新增WebSocket测试功能，支持实时流式对话测试：**
+
+#### 🔌 WebSocket功能测试 (`test_websocket_functionality.py`)
+
+验证WebSocket基础配置和功能：
+
+| 测试用例 | 描述 | 预期结果 |
+|----------|------|----------|
+| `test_django_configuration` | Django Channels配置检查 | 验证INSTALLED_APPS、ASGI_APPLICATION、CHANNEL_LAYERS |
+| `test_websocket_routing` | WebSocket路由配置 | 验证websocket_urlpatterns和路由模式 |
+| `test_consumer_classes` | Consumer类验证 | 验证ChatConsumer和流式传输方法 |
+| `test_models_and_services` | 模型和服务检查 | 验证聊天模型和SimpleAgentService |
+| `test_database_data` | 数据库数据检查 | 验证可用Agent和支持思考的LLM模型 |
+| `test_asgi_application` | ASGI应用检查 | 验证ASGI应用和WebSocket协议支持 |
+
+#### 💬 流式对话集成测试 (`test_streaming_integration.py`)
+
+测试完整的WebSocket流式对话流程：
+
+| 测试用例 | 描述 | 预期结果 |
+|----------|------|----------|
+| `test_websocket_connection` | WebSocket连接测试 | 成功建立连接并收到确认消息 |
+| `test_message_flow` | 完整消息流程测试 | 发送消息并接收思考过程和流式答案 |
+
+**消息流程包含：**
+- 用户消息广播 (`new_message`)
+- 思考状态更新 (`thinking_status_update`)
+- 思考内容更新 (`thinking_content_update`)  
+- 思考完成 (`thinking_complete`)
+- 流式答案开始 (`answer_stream_start`)
+- 流式内容更新 (`answer_stream_update`)
+- 流式输出完成 (`answer_stream_complete`)
+
+#### 🚀 运行WebSocket测试
+
+```bash
+# 运行WebSocket功能测试
+python test/test_websocket_functionality.py
+
+# 运行流式对话集成测试（需要先启动ASGI服务器）
+python test/test_streaming_integration.py
+
+# 运行完整的WebSocket测试套件
+python test/run_websocket_tests.py
+```
+
+**注意：**
+- 集成测试需要先启动ASGI服务器: `./backend/start_websocket.sh`
+- 确保数据库中有可用的Agent和LLM模型
+- 支持思考过程的模型: qwen、moonshot
 
 ## 🚀 快速开始
 

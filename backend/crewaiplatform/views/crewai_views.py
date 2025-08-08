@@ -374,17 +374,28 @@ class CrewAIAgentViewSet(viewsets.ModelViewSet):
         """启动Agent"""
         try:
             agent = self.get_object()
+            logger.info(f"API请求启动Agent: {agent.name} (ID: {pk})")
+            
             success, message = agent.start()
             
-            return Response({
+            response_data = {
                 'success': success,
                 'message': message,
                 'status': agent.status
-            })
+            }
+            
+            if success:
+                logger.info(f"Agent启动成功: {agent.name}, 状态: {agent.status}")
+            else:
+                logger.error(f"Agent启动失败: {agent.name}, 错误: {message}")
+            
+            return Response(response_data)
         except Exception as e:
+            error_msg = f"API调用异常: {str(e)}"
+            logger.error(error_msg)
             return Response({
                 'success': False,
-                'message': str(e)
+                'message': error_msg
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     @action(detail=True, methods=['post'])

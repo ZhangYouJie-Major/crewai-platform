@@ -28,6 +28,14 @@
             <span>正在思考中...</span>
           </div>
           
+          <!-- 流式输出状态 -->
+          <div v-else-if="message.status === 'streaming'" class="streaming-indicator">
+            <div class="message-text streaming-text">
+              {{ message.content }}
+              <span class="typing-cursor">|</span>
+            </div>
+          </div>
+          
           <!-- 消息内容 -->
           <div v-else class="message-text" :class="{ error: message.status === 'failed' }">
             {{ message.content }}
@@ -91,6 +99,29 @@
       </div>
     </div>
 
+    <!-- 思考过程显示 -->
+    <div v-if="thinkingContent" class="thinking-display">
+      <div class="thinking-message">
+        <div class="agent-avatar">
+          <el-avatar :size="36">
+            <el-icon><Avatar /></el-icon>
+          </el-avatar>
+        </div>
+        <div class="thinking-content">
+          <div class="agent-name">{{ thinkingAgentName || 'Assistant' }}</div>
+          <div class="thinking-bubble">
+            <div class="thinking-header">
+              <el-icon class="is-loading thinking-icon"><Loading /></el-icon>
+              <span class="thinking-label">正在思考...</span>
+            </div>
+            <div class="thinking-text" v-if="thinkingContent.trim()">
+              {{ thinkingContent }}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- 空状态 -->
     <div v-if="!loading && messages.length === 0" class="empty-state">
       <el-empty 
@@ -128,6 +159,14 @@ const props = defineProps({
   loading: {
     type: Boolean,
     default: false
+  },
+  thinkingContent: {
+    type: String,
+    default: ''
+  },
+  thinkingAgentName: {
+    type: String,
+    default: 'Assistant'
   }
 })
 
@@ -263,6 +302,7 @@ defineExpose({
   line-height: 1.6;
   white-space: pre-wrap;
   font-size: 14px;
+  color: #303133; /* 设置深色文字颜色 */
 }
 
 .message-text.error {
@@ -317,5 +357,105 @@ defineExpose({
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+/* 流式输出样式 */
+.streaming-indicator {
+  margin-bottom: 12px;
+}
+
+.streaming-text {
+  position: relative;
+}
+
+.typing-cursor {
+  display: inline-block;
+  background-color: #409eff;
+  color: #409eff;
+  animation: blink 1s infinite;
+  margin-left: 2px;
+}
+
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+/* 思考过程显示 */
+.thinking-display {
+  margin-bottom: 20px;
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+.thinking-message {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.thinking-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.thinking-bubble {
+  background: linear-gradient(135deg, #e3f2fd 0%, #f3e5f5 100%);
+  border: 1px solid #e1bee7;
+  border-radius: 12px;
+  padding: 16px;
+  position: relative;
+  animation: pulse 2s infinite;
+}
+
+.thinking-bubble::before {
+  content: '';
+  position: absolute;
+  top: 15px;
+  left: -6px;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 6px 6px 6px 0;
+  border-color: transparent #e1bee7 transparent transparent;
+}
+
+.thinking-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.thinking-icon {
+  color: #9c27b0;
+}
+
+.thinking-label {
+  font-weight: 500;
+  color: #7b1fa2;
+  font-size: 14px;
+}
+
+.thinking-text {
+  color: #5e35b1;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 8px 0;
+  border-top: 1px solid rgba(156, 39, 176, 0.2);
+}
+
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 rgba(156, 39, 176, 0.2); }
+  70% { box-shadow: 0 0 0 10px rgba(156, 39, 176, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(156, 39, 176, 0); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 </style>

@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python manage.py:*)",
+      "Bash(npm run dev:*)",
+      "Bash(cat:*)",
+      "Bash(python test:*)",
+      "Bash(python3:*)",
+      "Bash(chmod +x /mnt/f/学习/PythonHome/crewai-platform/backend/start_websocket.sh)",
+      "Bash(pip install -e .)",
+      "Bash(python -m pip install:*)",
+      "Bash(./backend/start_websocket.sh)",
+      "Bash(bash backend/start_websocket.sh)",
+      "Bash(dos2unix backend/start_websocket.sh)",
+      "Bash(sed:*)",
+      "Bash(bash start_websocket.sh)",
+      "Bash(rm -f /mnt/f/学习/PythonHome/crewai-platform/test_websocket_config.py)",
+      "Bash(tasklist:*)",
+      "Bash(wmic:*)",
+      "Bash(taskkill:*)",
+      "Bash(python:*)",
+      "Bash(./start_websocket.sh:*)",
+      "Bash(start \"\" python manage.py runserver)",
+      "Bash(curl:*)",
+      "Bash(pip install:*)",
+      "Bash(daphne:*)",
+      "Bash(rm:*)",
+      "Bash(cmd /c:*)",
+      "Bash(git rm:*)",
+      "Bash(git add:*)"
+    ],
+    "deny": []
+  }
+}

@@ -28,6 +28,16 @@ class ChatService:
         
         try:
             with transaction.atomic():
+                # 如果没有指定智能体，尝试自动分配用户的第一个可用智能体
+                if not primary_agent:
+                    available_agent = CrewAIAgent.objects.filter(
+                        owner=user,
+                        is_active=True
+                    ).first()
+                    if available_agent:
+                        primary_agent = available_agent
+                        logger.info(f"自动为用户 {user.username} 分配智能体: {primary_agent.display_name}")
+                
                 conversation = ChatConversation.objects.create(
                     user=user,
                     title=title or '新会话',

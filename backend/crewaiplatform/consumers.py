@@ -25,39 +25,72 @@ class ChatConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         """建立WebSocket连接"""
         
-        # 获取会话ID
-        self.conversation_id = self.scope['url_route']['kwargs']['conversation_id']
-        self.user = self.scope['user']
-        
-        # 验证用户认证
-        if not self.user.is_authenticated:
-            await self.close(code=4001)  # 未认证错误
-            return
-        
-        # 验证会话权限
-        conversation = await self.get_conversation()
-        if not conversation:
-            await self.close(code=4004)  # 会话不存在或无权限
-            return
-        
-        # 加入会话群组
-        self.conversation_group_name = f'chat_{self.conversation_id}'
-        await self.channel_layer.group_add(
-            self.conversation_group_name,
-            self.channel_name
-        )
-        
-        # 接受连接
-        await self.accept()
-        
-        # 发送连接成功消息
-        await self.send(text_data=json.dumps({
-            'type': 'connection_established',
-            'conversation_id': self.conversation_id,
-            'message': '连接成功'
-        }))
-        
-        logger.info(f"用户 {self.user.username} 连接到会话 {self.conversation_id}")
+        try:
+            logger.info("开始WebSocket连接处理")
+            
+            # 获取会话ID
+            self.conversation_id = self.scope['url_route']['kwargs']['conversation_id']
+            self.user = self.scope['user']
+            
+            logger.info(f"会话ID: {self.conversation_id}, 用户: {self.user}")
+            
+            # 验证用户认证
+            if not self.user.is_authenticated:
+                logger.warning("用户未认证，关闭连接")
+                await self.close(code=4001)  # 未认证错误
+                return
+            
+            logger.info("用户认证成功，准备验证会话权限")
+            
+            # 验证会话权限
+            try:
+                conversation = await self.get_conversation()
+                logger.info(f"获取会话成功: ID={conversation.id}, Title={conversation.title}")
+            except Exception as e:
+                logger.error(f"获取会话失败: {e}")
+                import traceback
+                traceback.print_exc()
+                await self.close(code=4004)  # 会话不存在或无权限
+                return
+                
+            if not conversation:
+                logger.warning("会话不存在或无权限")
+                await self.close(code=4004)  # 会话不存在或无权限
+                return
+            
+            logger.info("会话验证成功，准备加入群组")
+            
+            # 加入会话群组
+            self.conversation_group_name = f'chat_{self.conversation_id}'
+            await self.channel_layer.group_add(
+                self.conversation_group_name,
+                self.channel_name
+            )
+            
+            logger.info("成功加入会话群组，接受连接")
+            
+            # 接受连接
+            await self.accept()
+            
+            logger.info("连接已接受，发送成功消息")
+            
+            # 发送连接成功消息
+            await self.send(text_data=json.dumps({
+                'type': 'connection_established',
+                'conversation_id': self.conversation_id,
+                'message': '连接成功'
+            }))
+            
+            logger.info(f"用户 {self.user.username} 成功连接到会话 {self.conversation_id}")
+            
+        except Exception as e:
+            logger.error(f"WebSocket连接处理异常: {e}")
+            import traceback
+            traceback.print_exc()
+            try:
+                await self.close(code=5000)  # 服务器错误
+            except:
+                pass
     
     async def disconnect(self, close_code):
         """断开WebSocket连接"""
@@ -215,11 +248,18 @@ class ChatConsumer(AsyncWebsocketConsumer):
         """获取会话对象"""
         
         try:
-            return ChatConversation.objects.select_related('primary_agent').get(
+            conversation = ChatConversation.objects.select_related('primary_agent').get(
                 id=self.conversation_id,
                 user=self.user
             )
+            return conversation
         except ChatConversation.DoesNotExist:
+            # 调试：检查会话是否存在但用户不匹配
+            try:
+                existing = ChatConversation.objects.get(id=self.conversation_id)
+                logger.warning(f"会话{self.conversation_id}存在但用户不匹配: 会话用户ID={existing.user_id}, 当前用户ID={self.user.id}")
+            except ChatConversation.DoesNotExist:
+                logger.warning(f"会话{self.conversation_id}不存在")
             return None
     
     @database_sync_to_async
@@ -264,7 +304,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         }
     
     async def trigger_agent_response(self, conversation, user_message):
-        """触发Agent响应（简化版本）"""
+        """触发Agent响应（使用真实的LangChain Agent服务）"""
         
         try:
             # 发送Agent思考状态
@@ -280,48 +320,123 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     }
                 )
                 
-                # 模拟思考时间
-                import asyncio
-                await asyncio.sleep(2)
+                # 使用真实的SimpleAgentService处理消息，传递WebSocket消费者实例
+                from .services import SimpleAgentService
                 
-                # 生成模拟响应
-                mock_responses = [
-                    f"我理解您的问题：{user_message.content}",
-                    "这是一个很有趣的问题，让我来为您分析一下...",
-                    "基于我的理解，我建议...",
-                    "让我来帮您解决这个问题。",
-                ]
+                # 直接使用WebSocket专用的处理方法
+                await SimpleAgentService.process_user_message_with_websocket(user_message, self)
                 
-                import random
-                response_content = random.choice(mock_responses)
-                
-                # 创建助手消息
-                assistant_message = await self.create_assistant_message(
-                    conversation, response_content, agent
-                )
-                
-                # 停止思考状态
-                await self.channel_layer.group_send(
-                    self.conversation_group_name,
-                    {
-                        'type': 'agent_thinking',
-                        'agent_id': agent.id,
-                        'agent_name': agent.name,
-                        'is_thinking': False
-                    }
-                )
-                
-                # 广播助手消息
-                await self.channel_layer.group_send(
-                    self.conversation_group_name,
-                    {
-                        'type': 'new_message',
-                        'message': await self.serialize_message(assistant_message)
-                    }
-                )
+            else:
+                # 没有配置Agent
+                await self.send_error("该会话没有配置Agent，请先选择一个Agent。")
                 
         except Exception as e:
             logger.error(f"触发Agent响应失败: {e}")
+            await self.send_error(f"Agent响应失败: {str(e)}")
+    
+    # WebSocket流式传输方法
+    async def send_thinking_status(self, is_thinking: bool, message: str):
+        """发送思考状态"""
+        await self.channel_layer.group_send(
+            self.conversation_group_name,
+            {
+                'type': 'thinking_status_update',
+                'is_thinking': is_thinking,
+                'message': message
+            }
+        )
+    
+    async def send_thinking_update(self, content: str):
+        """发送思考过程更新"""
+        await self.channel_layer.group_send(
+            self.conversation_group_name,
+            {
+                'type': 'thinking_content_update',
+                'content': content
+            }
+        )
+    
+    async def send_thinking_complete(self, thinking_content: str):
+        """发送思考完成"""
+        await self.channel_layer.group_send(
+            self.conversation_group_name,
+            {
+                'type': 'thinking_complete',
+                'content': thinking_content
+            }
+        )
+    
+    async def send_answer_stream_start(self):
+        """发送答案流开始"""
+        await self.channel_layer.group_send(
+            self.conversation_group_name,
+            {
+                'type': 'answer_stream_start'
+            }
+        )
+    
+    async def send_answer_stream_update(self, content: str):
+        """发送答案流更新"""
+        await self.channel_layer.group_send(
+            self.conversation_group_name,
+            {
+                'type': 'answer_stream_update',
+                'content': content
+            }
+        )
+    
+    async def send_answer_stream_complete(self, final_content: str):
+        """发送答案流完成"""
+        await self.channel_layer.group_send(
+            self.conversation_group_name,
+            {
+                'type': 'answer_stream_complete',
+                'content': final_content
+            }
+        )
+    
+    # WebSocket事件处理方法
+    async def thinking_status_update(self, event):
+        """广播思考状态更新"""
+        await self.send(text_data=json.dumps({
+            'type': 'thinking_status_update',
+            'is_thinking': event['is_thinking'],
+            'message': event['message']
+        }))
+    
+    async def thinking_content_update(self, event):
+        """广播思考内容更新"""
+        await self.send(text_data=json.dumps({
+            'type': 'thinking_content_update',
+            'content': event['content']
+        }))
+    
+    async def thinking_complete(self, event):
+        """广播思考完成"""
+        await self.send(text_data=json.dumps({
+            'type': 'thinking_complete',
+            'content': event['content']
+        }))
+    
+    async def answer_stream_start(self, event):
+        """广播答案流开始"""
+        await self.send(text_data=json.dumps({
+            'type': 'answer_stream_start'
+        }))
+    
+    async def answer_stream_update(self, event):
+        """广播答案流更新"""
+        await self.send(text_data=json.dumps({
+            'type': 'answer_stream_update',
+            'content': event['content']
+        }))
+    
+    async def answer_stream_complete(self, event):
+        """广播答案流完成"""
+        await self.send(text_data=json.dumps({
+            'type': 'answer_stream_complete',
+            'content': event['content']
+        }))
 
 
 class NotificationConsumer(AsyncWebsocketConsumer):

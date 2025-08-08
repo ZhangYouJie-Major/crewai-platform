@@ -172,12 +172,22 @@ class ChatConversationViewSet(viewsets.ModelViewSet):
                 content=serializer.validated_data['content']
             )
             
-            # 同步触发Agent处理（在实际项目中应该使用后台任务队列如Celery）
-            # 这里使用模拟Agent服务进行演示
+            # 使用线程池异步处理Agent消息（避免阻塞HTTP响应）
             try:
-                self._process_message_sync(user_message)
+                import threading
+                thread = threading.Thread(
+                    target=self._process_message_sync, 
+                    args=(user_message,)
+                )
+                thread.start()
+                logger.info(f"Agent处理线程已启动，消息ID: {user_message.id}")
             except Exception as e:
-                logger.error(f"处理Agent响应失败: {e}")
+                logger.error(f"启动Agent处理线程失败: {e}")
+                # 创建友好的错误提示消息
+                ChatMessageService.create_system_message(
+                    conversation, 
+                    "抱歉，Agent服务暂时不可用，请检查Agent配置或稍后再试。"
+                )
             
             # 返回用户消息
             response_serializer = ChatMessageSerializer(user_message)
@@ -190,19 +200,65 @@ class ChatConversationViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
     
-    def _process_message_sync(self, user_message: ChatMessage):
-        """同步处理用户消息"""
+    def _retry_message_sync(self, message: ChatMessage):
+        """同步重试消息处理"""
         try:
-            # 使用模拟Agent服务处理消息
-            assistant_message = MockAgentService.process_user_message_sync(user_message)
+            import asyncio
             
-            if assistant_message:
-                logger.info(f"消息 {user_message.id} 处理完成")
-            else:
-                logger.error(f"消息 {user_message.id} 处理失败")
+            # 创建新的事件循环在线程中运行异步代码
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            try:
+                # 使用真实的Agent服务而不是Mock服务
+                assistant_message = loop.run_until_complete(
+                    SimpleAgentService.process_user_message(message)
+                )
                 
+                if assistant_message:
+                    logger.info(f"重试消息 {message.id} 处理完成")
+                else:
+                    logger.error(f"重试消息 {message.id} 处理失败")
+            finally:
+                loop.close()
+                    
         except Exception as e:
-            logger.error(f"同步处理消息失败: {e}")
+            logger.error(f"重试消息异步处理失败: {e}")
+
+    def _process_message_sync(self, user_message: ChatMessage):
+        """同步处理用户消息（使用真实的LangChain Agent服务）"""
+        try:
+            import asyncio
+            
+            # 创建新的事件循环在线程中运行异步代码
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            try:
+                # 运行异步Agent服务
+                assistant_message = loop.run_until_complete(
+                    SimpleAgentService.process_user_message(user_message)
+                )
+                
+                if assistant_message:
+                    logger.info(f"消息 {user_message.id} 异步处理完成")
+                else:
+                    logger.error(f"消息 {user_message.id} 异步处理失败")
+                    # 创建友好的错误提示消息
+                    ChatMessageService.create_system_message(
+                        user_message.conversation, 
+                        "抱歉，我现在无法理解您的问题，请尝试重新表述或检查Agent配置。"
+                    )
+            finally:
+                loop.close()
+                    
+        except Exception as e:
+            logger.error(f"异步处理消息失败: {e}")
+            # 创建友好的错误提示消息
+            ChatMessageService.create_system_message(
+                user_message.conversation, 
+                f"处理消息时遇到问题：{str(e)}。请稍后再试或联系管理员。"
+            )
     
     @action(detail=True, methods=['get'])
     def active_tasks(self, request, pk=None):
@@ -261,10 +317,14 @@ class ChatMessageViewSet(viewsets.ReadOnlyModelViewSet):
             )
         
         try:
-            # 异步重新处理消息
-            asyncio.create_task(
-                MockAgentService.process_user_message(message)
+            # 使用线程重新处理消息
+            import threading
+            thread = threading.Thread(
+                target=self._retry_message_sync, 
+                args=(message,)
             )
+            thread.start()
+            logger.info(f"重试消息线程已启动，消息ID: {message.id}")
             
             return Response({'message': '消息重试中'})
             

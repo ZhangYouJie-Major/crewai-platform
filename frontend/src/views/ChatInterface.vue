@@ -8,6 +8,21 @@
         </h3>
       </div>
       <div class="header-right">
+        <!-- WebSocket连接状态 -->
+        <div class="connection-status" :class="{ connected: isConnected, disconnected: !isConnected }">
+          <el-icon><Connection /></el-icon>
+          <span>{{ isConnected ? '已连接' : '未连接' }}</span>
+          <el-button 
+            v-if="!isConnected && currentConversationId" 
+            type="text" 
+            size="small" 
+            @click="forceReconnect"
+            style="margin-left: 8px;"
+          >
+            重连
+          </el-button>
+        </div>
+        
         <el-button 
           type="primary" 
           :icon="Plus" 
@@ -48,6 +63,8 @@
             ref="messageList"
             :messages="messages"
             :loading="messagesLoading"
+            :thinking-content="thinkingMessage"
+            :thinking-agent-name="thinkingAgentName"
             @message-retry="retryMessage"
           />
 
@@ -99,7 +116,7 @@
 <script setup>
 import { ref, reactive, onMounted, watch, nextTick, computed, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Setting } from '@element-plus/icons-vue'
+import { Plus, Setting, Connection } from '@element-plus/icons-vue'
 import { ApiService } from '@/services/api'
 import ChatSidebar from '@/components/ChatSidebar.vue'
 import MessageList from '@/components/MessageList.vue'
@@ -126,6 +143,16 @@ const thinkingAgentName = ref('')
 
 // WebSocket连接
 let websocket = null
+let reconnectTimer = null
+let reconnectAttempts = 0
+const maxReconnectAttempts = 5
+const reconnectInterval = 3000 // 3秒
+
+// 思考和流式状态
+const thinkingMessage = ref('')
+const streamingMessage = ref(null) // 当前流式消息对象
+const isStreaming = ref(false)
+const isConnected = ref(false)
 
 // 计算属性
 const hasConversations = computed(() => conversations.value.length > 0)
@@ -138,7 +165,21 @@ onMounted(async () => {
   if (hasConversations.value) {
     selectConversation(conversations.value[0].id)
   }
+  
+  // 监听页面可见性变化
+  document.addEventListener('visibilitychange', handleVisibilityChange)
 })
+
+// 页面可见性变化处理
+const handleVisibilityChange = () => {
+  if (document.visibilityState === 'visible') {
+    // 页面变为可见，检查WebSocket连接
+    if (currentConversationId.value && !isConnected.value) {
+      console.log('页面重新可见，尝试重连WebSocket')
+      connectWebSocket(currentConversationId.value)
+    }
+  }
+}
 
 // 监听会话变化
 watch(currentConversationId, async (newId, oldId) => {
@@ -230,6 +271,21 @@ const deleteConversation = async (conversationId) => {
       }
     )
     
+    console.log('🗑️ 删除会话:', conversationId)
+    
+    // 如果删除的是当前会话，先断开WebSocket连接并清理状态
+    if (currentConversationId.value === conversationId) {
+      console.log('🔌 断开当前会话的WebSocket连接')
+      disconnectWebSocket()
+      
+      // 清空当前会话相关状态
+      agentThinking.value = false
+      isStreaming.value = false
+      streamingMessage.value = null
+      thinkingMessage.value = ''
+      isProcessing.value = false
+    }
+    
     await ApiService.chat.deleteConversation(conversationId)
     
     // 从列表中移除
@@ -271,25 +327,60 @@ const archiveConversation = async (conversationId) => {
 
 // 消息处理方法
 const sendMessage = async (content) => {
-  if (!currentConversationId.value || isProcessing.value) return
+  if (!currentConversationId.value || isProcessing.value) {
+    console.warn('⚠️ 无法发送消息:', {
+      hasConversation: !!currentConversationId.value,
+      isProcessing: isProcessing.value
+    })
+    return
+  }
+  
+  console.log('📤 准备发送消息:', {
+    conversationId: currentConversationId.value,
+    content: content,
+    websocketStatus: websocket ? websocket.readyState : 'null',
+    isConnected: isConnected.value
+  })
   
   try {
     isProcessing.value = true
     
+    // 检查WebSocket连接，如果未连接则尝试连接
+    if (!websocket || websocket.readyState !== WebSocket.OPEN) {
+      console.log('🔗 WebSocket未连接，尝试建立连接')
+      connectWebSocket(currentConversationId.value)
+      
+      // 等待连接建立（最多等待3秒）
+      let waitTime = 0
+      const maxWaitTime = 3000
+      const checkInterval = 100
+      
+      while ((!websocket || websocket.readyState !== WebSocket.OPEN) && waitTime < maxWaitTime) {
+        await new Promise(resolve => setTimeout(resolve, checkInterval))
+        waitTime += checkInterval
+      }
+    }
+    
     // 通过WebSocket发送消息
     if (websocket && websocket.readyState === WebSocket.OPEN) {
-      websocket.send(JSON.stringify({
+      const messageData = {
         type: 'send_message',
         content: content
-      }))
+      }
+      
+      console.log('🚀 通过WebSocket发送消息:', messageData)
+      websocket.send(JSON.stringify(messageData))
+      
     } else {
+      console.warn('⚠️ WebSocket仍未连接，使用HTTP API降级')
       // 降级到HTTP API
-      await ApiService.chat.sendMessage(currentConversationId.value, { content })
+      const response = await ApiService.chat.sendMessage(currentConversationId.value, { content })
+      console.log('📡 HTTP API响应:', response)
       await loadMessages(currentConversationId.value)
     }
     
   } catch (error) {
-    console.error('发送消息失败:', error)
+    console.error('❌ 发送消息失败:', error)
     ElMessage.error('发送消息失败')
   } finally {
     isProcessing.value = false
@@ -348,14 +439,41 @@ const saveSettings = (settings) => {
 const connectWebSocket = (conversationId) => {
   disconnectWebSocket()
   
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  const wsUrl = `${protocol}//${window.location.host}/ws/chat/${conversationId}/`
+  // 使用环境变量配置WebSocket URL
+  const wsBaseUrl = import.meta.env.VITE_WS_BASE_URL || 'ws://localhost:8000'
+  
+  // 获取JWT token并添加到WebSocket URL
+  const token = localStorage.getItem('access')
+  const wsUrl = token 
+    ? `${wsBaseUrl}/ws/chat/${conversationId}/?token=${token}`
+    : `${wsBaseUrl}/ws/chat/${conversationId}/`
+  
+  console.log('🔗 尝试连接WebSocket:', {
+    url: wsUrl.replace(/token=[^&]+/, 'token=***'), // 隐藏token在日志中
+    conversationId: conversationId,
+    wsBaseUrl: wsBaseUrl,
+    hasToken: !!token
+  })
   
   try {
     websocket = new WebSocket(wsUrl)
     
     websocket.onopen = () => {
-      console.log('WebSocket连接已建立')
+      console.log('✅ WebSocket连接已建立')
+      isConnected.value = true
+      reconnectAttempts = 0 // 重置重连计数
+      
+      // 清除重连定时器
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer)
+        reconnectTimer = null
+      }
+      
+      ElMessage({
+        message: 'WebSocket连接成功',
+        type: 'success',
+        duration: 2000
+      })
     }
     
     websocket.onmessage = (event) => {
@@ -363,55 +481,213 @@ const connectWebSocket = (conversationId) => {
       handleWebSocketMessage(data)
     }
     
-    websocket.onclose = () => {
-      console.log('WebSocket连接已断开')
+    websocket.onclose = (event) => {
+      console.log('🔌 WebSocket连接已断开:', {
+        code: event.code,
+        reason: event.reason,
+        wasClean: event.wasClean
+      })
+      isConnected.value = false
       websocket = null
+      
+      // 如果不是正常关闭（代码1000）且在活跃页面，尝试重连
+      if (event.code !== 1000 && document.visibilityState === 'visible' && currentConversationId.value) {
+        console.log('⚠️ 非正常断开，尝试重连')
+        attemptReconnect(conversationId)
+      }
     }
     
     websocket.onerror = (error) => {
-      console.error('WebSocket错误:', error)
+      console.error('❌ WebSocket错误:', error)
+      ElMessage.error('WebSocket连接出错')
     }
   } catch (error) {
-    console.error('创建WebSocket连接失败:', error)
+    console.error('❌ 创建WebSocket连接失败:', error)
+    ElMessage.error('无法建立WebSocket连接')
+  }
+}
+
+const attemptReconnect = (conversationId) => {
+  if (reconnectAttempts >= maxReconnectAttempts) {
+    ElMessage.error('WebSocket重连失败，请刷新页面')
+    return
+  }
+  
+  reconnectAttempts++
+  console.log(`🔄 尝试WebSocket重连 (${reconnectAttempts}/${maxReconnectAttempts})`)
+  
+  ElMessage({
+    message: `WebSocket重连中... (${reconnectAttempts}/${maxReconnectAttempts})`,
+    type: 'info',
+    duration: 2000
+  })
+  
+  reconnectTimer = setTimeout(() => {
+    connectWebSocket(conversationId)
+  }, reconnectInterval)
+}
+
+// 强制重连WebSocket
+const forceReconnect = () => {
+  if (currentConversationId.value) {
+    console.log('🔄 用户手动触发重连')
+    reconnectAttempts = 0 // 重置重连计数
+    connectWebSocket(currentConversationId.value)
   }
 }
 
 const disconnectWebSocket = () => {
+  // 清理重连定时器
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer)
+    reconnectTimer = null
+  }
+  
+  // 关闭WebSocket连接
   if (websocket) {
-    websocket.close()
+    websocket.close(1000) // 正常关闭代码
     websocket = null
   }
+  
+  isConnected.value = false
+  reconnectAttempts = 0
 }
 
 const handleWebSocketMessage = (data) => {
+  // 详细的调试日志
+  console.log('📨 WebSocket收到消息:', {
+    type: data.type,
+    timestamp: new Date().toISOString(),
+    data: data
+  })
+  
   switch (data.type) {
     case 'connection_established':
-      console.log('WebSocket连接成功')
+      console.log('✅ WebSocket连接建立成功')
       break
       
     case 'new_message':
+      console.log('💬 收到新消息:', data.message)
       // 添加新消息到列表
       messages.value.push(data.message)
       scrollToBottom()
       break
       
     case 'agent_thinking':
-      // 显示Agent思考状态
+      console.log(`🤔 Agent思考状态: ${data.is_thinking ? '开始' : '结束'}`, {
+        agent_id: data.agent_id,
+        agent_name: data.agent_name
+      })
+      // 显示Agent思考状态（传统方式）
       agentThinking.value = data.is_thinking
       thinkingAgentName.value = data.agent_name
       break
       
+    case 'thinking_status_update':
+      console.log('💭 思考状态更新:', {
+        is_thinking: data.is_thinking,
+        message: data.message
+      })
+      // 新的思考状态更新
+      agentThinking.value = data.is_thinking
+      thinkingMessage.value = data.message
+      if (data.is_thinking) {
+        // 开始思考，显示loading效果
+        ElMessage({
+          message: data.message,
+          type: 'info',
+          duration: 2000
+        })
+      }
+      break
+      
+    case 'thinking_content_update':
+      console.log('📝 思考内容更新:', data.content.substring(0, 100) + '...')
+      // 思考过程更新
+      thinkingMessage.value = data.content
+      // 实时更新思考内容显示
+      updateThinkingDisplay(data.content)
+      break
+      
+    case 'thinking_complete':
+      console.log('✨ 思考完成')
+      // 思考完成
+      agentThinking.value = false
+      thinkingMessage.value = ''
+      ElMessage({
+        message: '思考完成，开始回答...',
+        type: 'success',
+        duration: 1500
+      })
+      break
+      
+    case 'answer_stream_start':
+      console.log('📋 开始流式输出答案')
+      // 开始流式输出答案
+      isStreaming.value = true
+      // 创建一个新的助手消息用于流式更新
+      streamingMessage.value = {
+        id: Date.now(), // 临时ID
+        role: 'assistant',
+        content: '',
+        agent_name: thinkingAgentName.value,
+        status: 'streaming',
+        created_at: new Date().toISOString()
+      }
+      messages.value.push(streamingMessage.value)
+      scrollToBottom()
+      break
+      
+    case 'answer_stream_update':
+      console.log('⚡ 流式内容更新:', data.content)
+      // 流式更新答案内容
+      if (streamingMessage.value) {
+        streamingMessage.value.content += data.content
+        // 自动滚动到底部
+        scrollToBottom()
+      }
+      break
+      
+    case 'answer_stream_complete':
+      console.log('✅ 流式输出完成:', {
+        content_length: data.content.length
+      })
+      // 流式输出完成
+      if (streamingMessage.value) {
+        streamingMessage.value.content = data.content
+        streamingMessage.value.status = 'completed'
+      }
+      isStreaming.value = false
+      streamingMessage.value = null
+      ElMessage({
+        message: '回答完成',
+        type: 'success',
+        duration: 1500
+      })
+      break
+      
     case 'typing_status':
+      console.log('⌨️ 输入状态:', data)
       // 处理用户输入状态（可以显示其他用户正在输入）
       break
       
     case 'error':
+      console.error('❌ WebSocket错误消息:', data.message)
       ElMessage.error(data.message)
+      agentThinking.value = false
+      isStreaming.value = false
       break
       
     default:
-      console.log('未处理的WebSocket消息:', data)
+      console.warn('❓ 未处理的WebSocket消息类型:', data.type, data)
   }
+}
+
+// 更新思考过程显示
+const updateThinkingDisplay = (content) => {
+  // 可以在这里实现思考过程的实时显示逻辑
+  // 例如在MessageList组件中显示思考气泡
+  console.log('思考过程:', content)
 }
 
 // 工具方法
@@ -424,9 +700,10 @@ const scrollToBottom = () => {
   })
 }
 
-// 组件销毁时清理WebSocket连接
+// 组件销毁时清理WebSocket连接和事件监听
 onBeforeUnmount(() => {
   disconnectWebSocket()
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
 })
 </script>
 
@@ -499,5 +776,36 @@ onBeforeUnmount(() => {
   background: white;
   border-left: 1px solid #e4e7ed;
   overflow-y: auto;
+}
+
+/* WebSocket连接状态样式 */
+.connection-status {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  transition: all 0.3s;
+}
+
+.connection-status.connected {
+  color: #67c23a;
+  background-color: rgba(103, 194, 58, 0.1);
+}
+
+.connection-status.disconnected {
+  color: #f56c6c;
+  background-color: rgba(245, 108, 108, 0.1);
+}
+
+.connection-status.disconnected .el-icon {
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.5; }
+  100% { opacity: 1; }
 }
 </style>

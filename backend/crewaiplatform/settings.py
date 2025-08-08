@@ -69,6 +69,9 @@ TEMPLATES = [
 WSGI_APPLICATION = "crewaiplatform.wsgi.application"
 ASGI_APPLICATION = "crewaiplatform.asgi.application"
 
+# 告诉Django使用ASGI而不是WSGI
+USE_DEPRECATED_PYTZ = False
+
 # Database configuration
 # 支持多种数据库配置方式
 DATABASE_URL = os.environ.get('DATABASE_URL')
@@ -174,6 +177,7 @@ LOGGING = {
         'console': {
             'class': 'logging.StreamHandler',
             'formatter': 'verbose',
+            'stream': 'ext://sys.stdout',  # 显式指定输出流
         },
         'file': {
             'class': 'logging.handlers.RotatingFileHandler',
@@ -181,6 +185,7 @@ LOGGING = {
             'maxBytes': 1024*1024*10,  # 10MB
             'backupCount': 5,
             'formatter': 'verbose',
+            'encoding': 'utf-8',  # 显式设置UTF-8编码
         },
     },
     'root': {
@@ -189,13 +194,23 @@ LOGGING = {
     },
     'loggers': {
         'django': {
-            'handlers': ['console', 'file'] if not DEBUG else ['console'],
+            'handlers': ['console', 'file'],
             'level': os.environ.get('DJANGO_LOG_LEVEL', 'INFO'),
             'propagate': False,
         },
         'crewaiplatform': {
-            'handlers': ['console', 'file'] if not DEBUG else ['console'],
+            'handlers': ['console', 'file'],
             'level': os.environ.get('APP_LOG_LEVEL', 'DEBUG'),
+            'propagate': False,
+        },
+        'django.request': {
+            'handlers': ['console', 'file'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+        'django.db.backends': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
             'propagate': False,
         },
     },
@@ -204,15 +219,7 @@ LOGGING = {
 # Channels配置
 CHANNEL_LAYERS = {
     'default': {
-        'BACKEND': 'channels_redis.core.RedisChannelLayer',
-        'CONFIG': {
-            "hosts": [(
-                os.environ.get('REDIS_HOST', '127.0.0.1'), 
-                int(os.environ.get('REDIS_PORT', 6379))
-            )],
-        },
-    } if os.environ.get('REDIS_URL') or os.environ.get('REDIS_HOST') else {
-        # 开发环境使用内存通道层
+        # 开发环境使用内存通道层（避免Redis认证问题）
         'BACKEND': 'channels.layers.InMemoryChannelLayer'
     },
 }

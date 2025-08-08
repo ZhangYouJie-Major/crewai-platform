@@ -1,10 +1,10 @@
 #!/bin/bash
 
-# CrewAI Platform 后端启动脚本
-# 用于日常开发中快速启动Django服务器
+# CrewAI Platform WebSocket支持的启动脚本
+# 使用Daphne ASGI服务器以支持WebSocket连接
 
 echo "========================================="
-echo "启动CrewAI Platform后端服务..."
+echo "启动CrewAI Platform WebSocket服务..."
 echo "========================================="
 
 # 切换到脚本所在目录
@@ -19,14 +19,11 @@ elif [ -d "venv" ]; then
     source venv/bin/activate
 fi
 
-# 检查依赖是否安装
-if [ ! -f ".dependencies_installed" ]; then
-    echo "检测到首次运行，安装依赖..."
-    pip install -e .
-    touch .dependencies_installed
-fi
+# 检查并安装依赖
+echo "检查依赖..."
+pip install -e . -q
 
-# 快速数据库检查
+# 检查数据库连接
 echo "检查数据库连接..."
 CHECK_OUTPUT=$(python manage.py check --database default 2>&1)
 CHECK_EXIT_CODE=$?
@@ -35,8 +32,6 @@ if [ $CHECK_EXIT_CODE -eq 0 ]; then
 else
     echo "数据库检查输出: $CHECK_OUTPUT"
     echo "数据库连接失败，请检查数据库配置"
-    echo "如需初始化数据库，请运行: ./init_backend.sh"
-    # 不退出，继续尝试启动
 fi
 
 # 检查是否需要迁移
@@ -53,16 +48,18 @@ HOST=${HOST:-127.0.0.1}
 PORT=${PORT:-8000}
 
 echo "========================================="
-echo "Django服务器启动信息:"
+echo "ASGI服务器启动信息:"
 echo "服务器地址: http://$HOST:$PORT"
+echo "WebSocket地址: ws://$HOST:$PORT/ws/"
 echo "API文档: http://$HOST:$PORT/api/"
 echo "管理后台: http://$HOST:$PORT/admin/"
 echo ""
-echo "⚠️  注意: 此脚本使用普通Django服务器，不支持WebSocket"
-echo "💡 如需WebSocket功能，请使用: ./start_websocket.sh"
+echo "WebSocket路由:"
+echo "  - ws://$HOST:$PORT/ws/chat/<conversation_id>/"
+echo "  - ws://$HOST:$PORT/ws/notifications/"
 echo ""
 echo "按 Ctrl+C 停止服务器"
 echo "========================================="
 
-# 启动Django开发服务器
-python manage.py runserver "$HOST:$PORT"
+# 使用Daphne启动ASGI服务器（支持WebSocket）
+daphne -b "$HOST" -p "$PORT" crewaiplatform.asgi:application
