@@ -685,9 +685,22 @@ const handleWebSocketMessage = (data) => {
 
 // 更新思考过程显示
 const updateThinkingDisplay = (content) => {
-  // 可以在这里实现思考过程的实时显示逻辑
-  // 例如在MessageList组件中显示思考气泡
-  console.log('思考过程:', content)
+  if (!content) {
+    thinkingMessage.value = ''
+    return
+  }
+  
+  // 检查内容是否包含<thinking>标签，如果有则提取标签内容
+  const thinkingMatch = content.match(/<thinking>([\s\S]*?)<\/thinking>/)
+  if (thinkingMatch && thinkingMatch[1]) {
+    // 提取thinking标签内的内容
+    thinkingMessage.value = thinkingMatch[1].trim()
+  } else {
+    // 如果没有标签，直接使用原始内容
+    thinkingMessage.value = content.trim()
+  }
+  
+  console.log('思考过程更新:', thinkingMessage.value.substring(0, 100) + '...')
 }
 
 // 工具方法

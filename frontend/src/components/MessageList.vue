@@ -31,14 +31,14 @@
           <!-- 流式输出状态 -->
           <div v-else-if="message.status === 'streaming'" class="streaming-indicator">
             <div class="message-text streaming-text">
-              {{ message.content }}
+              {{ parseMessageContent(message.content) }}
               <span class="typing-cursor">|</span>
             </div>
           </div>
           
           <!-- 消息内容 -->
           <div v-else class="message-text" :class="{ error: message.status === 'failed' }">
-            {{ message.content }}
+            {{ parseMessageContent(message.content) }}
           </div>
           
           <!-- 错误信息 -->
@@ -184,6 +184,27 @@ watch(() => props.messages.length, () => {
 })
 
 // 方法
+const parseMessageContent = (content) => {
+  if (!content) return ''
+  
+  // 检查是否包含<answer>标签
+  const answerMatch = content.match(/<answer>([\s\S]*?)<\/answer>/)
+  if (answerMatch && answerMatch[1]) {
+    // 返回answer标签内的内容，去除首尾空白
+    return answerMatch[1].trim()
+  }
+  
+  // 如果没有answer标签，检查是否包含thinking标签
+  const thinkingMatch = content.match(/<thinking>([\s\S]*?)<\/thinking>/)
+  if (thinkingMatch) {
+    // 如果只有thinking标签，返回一个友好的提示
+    return '正在思考中...'
+  }
+  
+  // 如果都没有，返回原始内容
+  return content
+}
+
 const formatTime = (timestamp) => {
   if (!timestamp) return ''
   
@@ -209,7 +230,9 @@ const formatTime = (timestamp) => {
 
 const copyMessage = async (message) => {
   try {
-    await navigator.clipboard.writeText(message.content)
+    // 复制解析后的内容而不是原始内容
+    const contentToCopy = parseMessageContent(message.content)
+    await navigator.clipboard.writeText(contentToCopy)
     ElMessage.success('已复制到剪贴板')
   } catch (error) {
     console.error('复制失败:', error)
