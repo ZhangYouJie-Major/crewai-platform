@@ -44,19 +44,20 @@ fi
 mkdir -p logs
 
 # 设置默认的主机和端口
-HOST=${HOST:-127.0.0.1}
+HOST=${HOST:-0.0.0.0}
 PORT=${PORT:-8000}
 
 echo "========================================="
 echo "ASGI服务器启动信息:"
-echo "服务器地址: http://$HOST:$PORT"
-echo "WebSocket地址: ws://$HOST:$PORT/ws/"
-echo "API文档: http://$HOST:$PORT/api/"
-echo "管理后台: http://$HOST:$PORT/admin/"
+echo "服务器地址: http://localhost:$PORT"
+echo "WebSocket地址: ws://localhost:$PORT/ws/"
+echo "API文档: http://localhost:$PORT/api/"
+echo "管理后台: http://localhost:$PORT/admin/"
 echo ""
 echo "WebSocket路由:"
-echo "  - ws://$HOST:$PORT/ws/chat/<conversation_id>/"
-echo "  - ws://$HOST:$PORT/ws/notifications/"
+echo "  - ws://localhost:$PORT/ws/test/"
+echo "  - ws://localhost:$PORT/ws/chat/<conversation_id>/"
+echo "  - ws://localhost:$PORT/ws/notifications/"
 echo ""
 echo "按 Ctrl+C 停止服务器"
 echo "========================================="
