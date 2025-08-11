@@ -3,8 +3,13 @@
     <div class="message-wrapper" v-for="message in messages" :key="message.id">
       <!-- 用户消息 -->
       <div v-if="message.role === 'user'" class="message user-message">
-        <div class="message-content">
+        <div class="message-content" :class="{ sending: message.status === 'sending' }">
           <div class="message-text">{{ message.content }}</div>
+          <!-- 发送中的状态显示 -->
+          <div v-if="message.status === 'sending'" class="sending-indicator">
+            <el-icon class="is-loading"><Loading /></el-icon>
+            <span>发送中...</span>
+          </div>
         </div>
         <div class="message-meta">
           <span class="message-time">{{ formatTime(message.created_at) }}</span>
@@ -22,23 +27,17 @@
         <div class="message-content">
           <div class="agent-name">{{ message.agent_name || 'Assistant' }}</div>
           
-          <!-- 消息状态 -->
-          <div v-if="message.status === 'processing'" class="processing-indicator">
-            <el-icon class="is-loading"><Loading /></el-icon>
-            <span>正在思考中...</span>
-          </div>
-          
           <!-- 流式输出状态 -->
-          <div v-else-if="message.status === 'streaming'" class="streaming-indicator">
+          <div v-if="message.status === 'streaming'" class="streaming-indicator">
             <div class="message-text streaming-text">
               {{ message.content }}
               <span class="typing-cursor">|</span>
             </div>
           </div>
           
-          <!-- 消息内容 -->
+          <!-- 正常消息内容 -->
           <div v-else class="message-text" :class="{ error: message.status === 'failed' }">
-            {{ message.content }}
+            {{ getDisplayContent(message) }}
           </div>
           
           <!-- 错误信息 -->
@@ -99,8 +98,8 @@
       </div>
     </div>
 
-    <!-- 思考过程显示 -->
-    <div v-if="thinkingContent" class="thinking-display">
+    <!-- AI思考状态显示 -->
+    <div v-if="chatState.isThinking || chatState.thinkingContent" class="thinking-display">
       <div class="thinking-message">
         <div class="agent-avatar">
           <el-avatar :size="36">
@@ -108,14 +107,36 @@
           </el-avatar>
         </div>
         <div class="thinking-content">
-          <div class="agent-name">{{ thinkingAgentName || 'Assistant' }}</div>
-          <div class="thinking-bubble">
-            <div class="thinking-header">
-              <el-icon class="is-loading thinking-icon"><Loading /></el-icon>
-              <span class="thinking-label">正在思考...</span>
+          <div class="agent-name">{{ chatState.thinkingAgentName || 'Assistant' }}</div>
+          <div class="thinking-bubble" :class="{ collapsed: chatState.thinkingCollapsed }">
+            <div class="thinking-header" @click="toggleThinking" :class="{ clickable: chatState.thinkingContent }">
+              <el-icon class="is-loading thinking-icon" v-if="chatState.isThinking"><Loading /></el-icon>
+              <el-icon class="thinking-icon" v-else><ChatDotRound /></el-icon>
+              <span class="thinking-label">
+                {{ chatState.isThinking ? '正在思考...' : '思考过程' }}
+              </span>
+              <el-icon class="collapse-icon" v-if="chatState.thinkingContent" :class="{ rotated: !chatState.thinkingCollapsed }">
+                <ArrowDown />
+              </el-icon>
             </div>
-            <div class="thinking-text" v-if="thinkingContent.trim()">
-              {{ thinkingContent }}
+            <div 
+              class="thinking-text" 
+              v-if="chatState.thinkingContent && !chatState.thinkingCollapsed"
+              :class="{ 'collapsed': chatState.thinkingCollapsed }"
+            >
+              <div class="thinking-content-text">
+                {{ chatState.thinkingContent }}
+              </div>
+            </div>
+            <!-- 折叠状态下的简要显示 -->
+            <div 
+              v-if="chatState.thinkingContent && chatState.thinkingCollapsed" 
+              class="thinking-summary"
+            >
+              <span class="summary-text">
+                {{ chatState.thinkingContent.substring(0, 50) }}{{ chatState.thinkingContent.length > 50 ? '...' : '' }}
+              </span>
+              <span class="expand-hint">点击展开完整思考过程</span>
             </div>
           </div>
         </div>
@@ -147,7 +168,8 @@ import {
   Loading, 
   InfoFilled, 
   Avatar,
-  ChatDotRound
+  ChatDotRound,
+  ArrowDown
 } from '@element-plus/icons-vue'
 
 // Props
@@ -160,18 +182,22 @@ const props = defineProps({
     type: Boolean,
     default: false
   },
-  thinkingContent: {
-    type: String,
-    default: ''
-  },
-  thinkingAgentName: {
-    type: String,
-    default: 'Assistant'
+  chatState: {
+    type: Object,
+    required: true,
+    default: () => ({
+      status: 'idle',
+      isThinking: false,
+      thinkingMessage: '',
+      thinkingAgentName: '',
+      isStreaming: false,
+      streamingMessage: null
+    })
   }
 })
 
 // Emits
-const emit = defineEmits(['message-retry'])
+const emit = defineEmits(['message-retry', 'toggle-thinking'])
 
 // Refs
 const messageContainer = ref(null)
@@ -221,6 +247,27 @@ const retryMessage = (message) => {
   emit('message-retry', message)
 }
 
+// 渲染层解析：对带有<thinking>/<answer>标签的已保存消息做解析，仅用于展示
+const getDisplayContent = (message) => {
+  if (!message || !message.content) return ''
+  const content = String(message.content)
+  // 仅解析答案部分；思考过程在上方独立UI中展示
+  const answerMatch = content.match(/<answer[^>]*>([\s\S]*?)<\/answer>/i)
+  if (answerMatch) {
+    return answerMatch[1].trim()
+  }
+  // 没有answer标签则原样显示
+  return content
+}
+
+// 切换思考内容显示
+const toggleThinking = () => {
+  if (props.chatState.thinkingContent) {
+    // 通过父组件的方法来切换状态
+    emit('toggle-thinking')
+  }
+}
+
 const scrollToBottom = () => {
   if (messageContainer.value) {
     messageContainer.value.scrollTop = messageContainer.value.scrollHeight
@@ -253,6 +300,21 @@ defineExpose({
 
 .user-message {
   flex-direction: row-reverse;
+}
+
+.user-message .message-content.sending {
+  opacity: 0.7;
+  position: relative;
+}
+
+.sending-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #909399;
+  margin-top: 8px;
+  font-style: italic;
 }
 
 .user-message .message-content {
@@ -381,7 +443,7 @@ defineExpose({
   51%, 100% { opacity: 0; }
 }
 
-/* 思考过程显示 */
+/* 思考过程显示样式优化 */
 .thinking-display {
   margin-bottom: 20px;
   animation: fadeIn 0.3s ease-in-out;
@@ -404,7 +466,16 @@ defineExpose({
   border-radius: 12px;
   padding: 16px;
   position: relative;
+  transition: all 0.3s ease;
+}
+
+.thinking-bubble:not(.collapsed) {
   animation: pulse 2s infinite;
+}
+
+.thinking-bubble.collapsed {
+  background: linear-gradient(135deg, #f5f5f5 0%, #eeeeee 100%);
+  border-color: #e0e0e0;
 }
 
 .thinking-bubble::before {
@@ -417,6 +488,11 @@ defineExpose({
   border-style: solid;
   border-width: 6px 6px 6px 0;
   border-color: transparent #e1bee7 transparent transparent;
+  transition: border-color 0.3s ease;
+}
+
+.thinking-bubble.collapsed::before {
+  border-color: transparent #e0e0e0 transparent transparent;
 }
 
 .thinking-header {
@@ -424,28 +500,99 @@ defineExpose({
   align-items: center;
   gap: 8px;
   margin-bottom: 8px;
+  transition: all 0.2s ease;
+}
+
+.thinking-header.clickable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.thinking-header.clickable:hover {
+  opacity: 0.8;
 }
 
 .thinking-icon {
   color: #9c27b0;
+  transition: color 0.3s ease;
+}
+
+.thinking-bubble.collapsed .thinking-icon {
+  color: #757575;
 }
 
 .thinking-label {
   font-weight: 500;
   color: #7b1fa2;
   font-size: 14px;
+  transition: color 0.3s ease;
+}
+
+.thinking-bubble.collapsed .thinking-label {
+  color: #757575;
+}
+
+.collapse-icon {
+  margin-left: auto;
+  color: #9c27b0;
+  transition: transform 0.3s ease, color 0.3s ease;
+}
+
+.collapse-icon.rotated {
+  transform: rotate(180deg);
+}
+
+.thinking-bubble.collapsed .collapse-icon {
+  color: #757575;
 }
 
 .thinking-text {
+  max-height: 400px;
+  overflow-y: auto;
+  transition: max-height 0.3s ease, opacity 0.3s ease;
+}
+
+.thinking-text.collapsed {
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+}
+
+.thinking-content-text {
   color: #5e35b1;
   font-size: 13px;
   line-height: 1.5;
   white-space: pre-wrap;
   word-wrap: break-word;
-  max-height: 200px;
-  overflow-y: auto;
   padding: 8px 0;
   border-top: 1px solid rgba(156, 39, 176, 0.2);
+}
+
+.thinking-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(117, 117, 117, 0.2);
+}
+
+.summary-text {
+  color: #757575;
+  font-size: 12px;
+  line-height: 1.4;
+  font-style: italic;
+}
+
+.expand-hint {
+  color: #9c27b0;
+  font-size: 11px;
+  font-weight: 500;
+  opacity: 0.7;
+  transition: opacity 0.2s ease;
+}
+
+.thinking-header.clickable:hover .expand-hint {
+  opacity: 1;
 }
 
 @keyframes pulse {

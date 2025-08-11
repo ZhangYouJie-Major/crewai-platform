@@ -63,9 +63,9 @@
             ref="messageList"
             :messages="messages"
             :loading="messagesLoading"
-            :thinking-content="thinkingMessage"
-            :thinking-agent-name="thinkingAgentName"
+            :chat-state="chatState"
             @message-retry="retryMessage"
+            @toggle-thinking="toggleThinkingCollapse"
           />
 
           <!-- Agent状态指示器 -->
@@ -76,7 +76,7 @@
 
           <!-- 输入区域 -->
           <MessageInput
-            :disabled="isProcessing"
+            :disabled="chatState.status === 'sending' || chatState.status === 'thinking'"
             @send-message="sendMessage"
           />
         </div>
@@ -137,9 +137,23 @@ const messagesLoading = ref(false)
 const isProcessing = ref(false)
 const showSettings = ref(false)
 
-// Agent状态
-const agentThinking = ref(false)
-const thinkingAgentName = ref('')
+// 统一的聊天状态管理
+const chatState = reactive({
+  // 当前聊天状态: 'idle', 'sending', 'thinking', 'answering', 'streaming', 'completed'
+  status: 'idle',
+  // AI思考相关
+  isThinking: false,
+  thinkingContent: '',  // 思考的完整内容
+  thinkingCollapsed: false,  // 思考内容是否折叠
+  thinkingAgentName: '',
+  // 流式输出相关
+  isStreaming: false,
+  streamingMessage: null,
+  answerContent: '',  // 答案的完整内容
+  // 错误处理
+  hasError: false,
+  errorMessage: ''
+})
 
 // WebSocket连接
 let websocket = null
@@ -148,10 +162,16 @@ let reconnectAttempts = 0
 const maxReconnectAttempts = 5
 const reconnectInterval = 3000 // 3秒
 
-// 思考和流式状态
-const thinkingMessage = ref('')
-const streamingMessage = ref(null) // 当前流式消息对象
-const isStreaming = ref(false)
+// 状态管理相关
+let stateTimeoutTimer = null
+const stateTimeoutDuration = 30000 // 30秒超时
+
+// 兼容性属性（保持向后兼容）
+const agentThinking = computed(() => chatState.isThinking)
+const thinkingMessage = computed(() => chatState.thinkingContent)
+const thinkingAgentName = computed(() => chatState.thinkingAgentName)
+const streamingMessage = computed(() => chatState.streamingMessage)
+const isStreaming = computed(() => chatState.isStreaming)
 const isConnected = ref(false)
 
 // 计算属性
@@ -327,10 +347,10 @@ const archiveConversation = async (conversationId) => {
 
 // 消息处理方法
 const sendMessage = async (content) => {
-  if (!currentConversationId.value || isProcessing.value) {
+  if (!currentConversationId.value || chatState.status === 'sending') {
     console.warn('⚠️ 无法发送消息:', {
       hasConversation: !!currentConversationId.value,
-      isProcessing: isProcessing.value
+      chatStatus: chatState.status
     })
     return
   }
@@ -343,7 +363,30 @@ const sendMessage = async (content) => {
   })
   
   try {
-    isProcessing.value = true
+    // 1. 立即更新聊天状态为发送中
+    setChatState('sending')
+    
+    // 2. 立即在UI中显示用户消息
+    const userMessage = {
+      id: Date.now() + Math.random(), // 临时ID
+      role: 'user',
+      content: content,
+      status: 'sending',
+      created_at: new Date().toISOString(),
+      temp: true // 标记为临时消息
+    }
+    messages.value.push(userMessage)
+    scrollToBottom()
+    
+    // 3. 立即显示AI思考状态
+    setChatState('thinking', {
+      isThinking: true,
+      thinkingMessage: '正在思考中...',
+      thinkingAgentName: currentConversation.value?.primary_agent_name || 'Assistant'
+    })
+    
+    // 4. 启动状态超时保护
+    startStateTimeout()
     
     // 检查WebSocket连接，如果未连接则尝试连接
     if (!websocket || websocket.readyState !== WebSocket.OPEN) {
@@ -376,14 +419,25 @@ const sendMessage = async (content) => {
       // 降级到HTTP API
       const response = await ApiService.chat.sendMessage(currentConversationId.value, { content })
       console.log('📡 HTTP API响应:', response)
+      
+      // 移除临时用户消息，重新加载所有消息
+      messages.value = messages.value.filter(msg => !msg.temp)
       await loadMessages(currentConversationId.value)
     }
     
   } catch (error) {
     console.error('❌ 发送消息失败:', error)
+    
+    // 清理临时消息
+    messages.value = messages.value.filter(msg => !msg.temp)
+    
+    // 设置错误状态
+    setChatState('idle', {
+      hasError: true,
+      errorMessage: '发送消息失败：' + error.message
+    })
+    
     ElMessage.error('发送消息失败')
-  } finally {
-    isProcessing.value = false
   }
 }
 
@@ -561,6 +615,9 @@ const handleWebSocketMessage = (data) => {
     data: data
   })
   
+  // 清除状态超时（有活动说明正常）
+  clearStateTimeout()
+  
   switch (data.type) {
     case 'connection_established':
       console.log('✅ WebSocket连接建立成功')
@@ -568,7 +625,9 @@ const handleWebSocketMessage = (data) => {
       
     case 'new_message':
       console.log('💬 收到新消息:', data.message)
-      // 添加新消息到列表
+      // 移除临时用户消息（如果存在）
+      messages.value = messages.value.filter(msg => !msg.temp)
+      // 添加真实消息到列表
       messages.value.push(data.message)
       scrollToBottom()
       break
@@ -578,9 +637,11 @@ const handleWebSocketMessage = (data) => {
         agent_id: data.agent_id,
         agent_name: data.agent_name
       })
-      // 显示Agent思考状态（传统方式）
-      agentThinking.value = data.is_thinking
-      thinkingAgentName.value = data.agent_name
+      // 更新思考状态
+      setChatState(data.is_thinking ? 'thinking' : 'idle', {
+        isThinking: data.is_thinking,
+        thinkingAgentName: data.agent_name
+      })
       break
       
     case 'thinking_status_update':
@@ -588,77 +649,112 @@ const handleWebSocketMessage = (data) => {
         is_thinking: data.is_thinking,
         message: data.message
       })
-      // 新的思考状态更新
-      agentThinking.value = data.is_thinking
-      thinkingMessage.value = data.message
-      if (data.is_thinking) {
-        // 开始思考，显示loading效果
-        ElMessage({
-          message: data.message,
-          type: 'info',
-          duration: 2000
-        })
-      }
+      setChatState(data.is_thinking ? 'thinking' : 'idle', {
+        isThinking: data.is_thinking,
+        thinkingContent: data.message
+      })
       break
       
     case 'thinking_content_update':
       console.log('📝 思考内容更新:', data.content.substring(0, 100) + '...')
-      // 思考过程更新
-      thinkingMessage.value = data.content
-      // 实时更新思考内容显示
-      updateThinkingDisplay(data.content)
+      // 解析thinking标签内容
+      const thinkingContent = parseThinkingContent(data.content)
+      setChatState('thinking', {
+        thinkingContent: thinkingContent
+      })
       break
       
     case 'thinking_complete':
-      console.log('✨ 思考完成')
-      // 思考完成
-      agentThinking.value = false
-      thinkingMessage.value = ''
-      ElMessage({
-        message: '思考完成，开始回答...',
-        type: 'success',
-        duration: 1500
+      console.log('✨ 思考完成，准备回答')
+      // 思考完成，进入回答阶段
+      setChatState('answering', {
+        isThinking: false
       })
       break
       
     case 'answer_stream_start':
       console.log('📋 开始流式输出答案')
-      // 开始流式输出答案
-      isStreaming.value = true
-      // 创建一个新的助手消息用于流式更新
-      streamingMessage.value = {
-        id: Date.now(), // 临时ID
+      // 开始流式输出答案 - 折叠思考内容
+      const newStreamingMessage = {
+        id: Date.now() + Math.random(), // 临时ID
         role: 'assistant',
         content: '',
-        agent_name: thinkingAgentName.value,
+        agent_name: chatState.thinkingAgentName || 'Assistant',
         status: 'streaming',
-        created_at: new Date().toISOString()
+        created_at: new Date().toISOString(),
+        thinking_content: chatState.thinkingContent // 保存思考内容
       }
-      messages.value.push(streamingMessage.value)
+      
+      setChatState('streaming', {
+        isStreaming: true,
+        streamingMessage: newStreamingMessage,
+        thinkingCollapsed: true, // 折叠思考内容
+        answerContent: '' // 重置答案内容
+      })
+      
+      messages.value.push(newStreamingMessage)
       scrollToBottom()
       break
       
     case 'answer_stream_update':
-      console.log('⚡ 流式内容更新:', data.content)
+      console.log('⚡ 流式内容更新:', data.content.substring(0, 50) + '...')
       // 流式更新答案内容
-      if (streamingMessage.value) {
-        streamingMessage.value.content += data.content
-        // 自动滚动到底部
-        scrollToBottom()
+      // 若尚未收到start事件（后端已做兜底，但前端也要健壮），则本地创建流式消息
+      if (!chatState.streamingMessage) {
+        const autoStreamingMessage = {
+          id: Date.now() + Math.random(),
+          role: 'assistant',
+          content: '',
+          agent_name: chatState.thinkingAgentName || 'Assistant',
+          status: 'streaming',
+          created_at: new Date().toISOString(),
+          thinking_content: chatState.thinkingContent
+        }
+        chatState.streamingMessage = autoStreamingMessage
+        messages.value.push(autoStreamingMessage)
+        setChatState('streaming', { isStreaming: true, thinkingCollapsed: true })
       }
+
+      // 解析answer标签内容，后端已发送累计内容，这里直接覆盖展示
+      const answerContent = parseAnswerContent(data.content || '')
+      chatState.streamingMessage.content = answerContent
+      chatState.answerContent = answerContent
+      scrollToBottom()
       break
       
     case 'answer_stream_complete':
       console.log('✅ 流式输出完成:', {
-        content_length: data.content.length
+        content_length: data.content ? data.content.length : 0
       })
       // 流式输出完成
-      if (streamingMessage.value) {
-        streamingMessage.value.content = data.content
-        streamingMessage.value.status = 'completed'
+      if (!chatState.streamingMessage) {
+        // 如果没有start/update，也要能展示最终答案
+        const finalMsg = {
+          id: Date.now() + Math.random(),
+          role: 'assistant',
+          content: '',
+          agent_name: chatState.thinkingAgentName || 'Assistant',
+          status: 'streaming',
+          created_at: new Date().toISOString(),
+          thinking_content: chatState.thinkingContent
+        }
+        chatState.streamingMessage = finalMsg
+        messages.value.push(finalMsg)
       }
-      isStreaming.value = false
-      streamingMessage.value = null
+      {
+        const finalAnswerContent = parseAnswerContent(data.content || chatState.answerContent || '')
+        chatState.streamingMessage.content = finalAnswerContent
+        chatState.streamingMessage.status = 'completed'
+      }
+      
+      // 完全重置到idle状态
+      setChatState('completed')
+      
+      // 延迟一点时间后完全重置状态
+      setTimeout(() => {
+        setChatState('idle')
+      }, 1000)
+      
       ElMessage({
         message: '回答完成',
         type: 'success',
@@ -673,9 +769,11 @@ const handleWebSocketMessage = (data) => {
       
     case 'error':
       console.error('❌ WebSocket错误消息:', data.message)
+      setChatState('idle', {
+        hasError: true,
+        errorMessage: data.message
+      })
       ElMessage.error(data.message)
-      agentThinking.value = false
-      isStreaming.value = false
       break
       
     default:
@@ -688,6 +786,108 @@ const updateThinkingDisplay = (content) => {
   // 可以在这里实现思考过程的实时显示逻辑
   // 例如在MessageList组件中显示思考气泡
   console.log('思考过程:', content)
+}
+
+// 内容解析方法
+const parseThinkingContent = (content) => {
+  // 提取<thinking>标签内的内容
+  const thinkingMatch = content.match(/<thinking[^>]*>([\s\S]*?)<\/thinking>/i)
+  return thinkingMatch ? thinkingMatch[1].trim() : ''
+}
+
+const parseAnswerContent = (content) => {
+  // 提取<answer>标签内的内容
+  if (!content) return ''
+  const answerMatch = content.match(/<answer[^>]*>([\s\S]*?)<\/answer>/i)
+  if (answerMatch) return answerMatch[1].trim()
+  // 无<answer>时，剥离<thinking>块
+  const withoutThinking = content.replace(/<thinking[^>]*>[\s\S]*?<\/thinking>/ig, '').trim()
+  return withoutThinking || content
+}
+
+// 切换思考内容的折叠状态
+const toggleThinkingCollapse = () => {
+  chatState.thinkingCollapsed = !chatState.thinkingCollapsed
+}
+
+// 状态管理方法
+const setChatState = (status, updates = {}) => {
+  console.log(`🔄 状态变化: ${chatState.status} → ${status}`, updates)
+  
+  // 根据状态设置默认值
+  const stateDefaults = {
+    idle: {
+      isThinking: false,
+      thinkingMessage: '',
+      thinkingContent: '',
+      isStreaming: false,
+      streamingMessage: null,
+      hasError: false,
+      errorMessage: ''
+    },
+    sending: {
+      hasError: false,
+      errorMessage: ''
+    },
+    thinking: {
+      isThinking: true,
+      isStreaming: false,
+      streamingMessage: null,
+      thinkingCollapsed: false
+    },
+    answering: {
+      isThinking: false,
+      thinkingCollapsed: true, // 开始回答时折叠思考内容
+      isStreaming: false
+    },
+    streaming: {
+      isThinking: false,
+      isStreaming: true,
+      thinkingCollapsed: true // 流式输出时保持思考内容折叠
+    },
+    completed: {
+      isThinking: false,
+      isStreaming: false,
+      streamingMessage: null,
+      thinkingCollapsed: false, // 完成后可以展开查看思考过程
+      thinkingContent: ''      // 完成后清空思考内容，避免残留导致显示“再次思考”
+    }
+  }
+  
+  // 应用状态默认值
+  Object.assign(chatState, stateDefaults[status] || {})
+  
+  // 应用额外的更新
+  Object.assign(chatState, updates)
+  
+  // 设置状态
+  chatState.status = status
+  
+  // 重新启动超时保护（除了idle状态）
+  if (status !== 'idle' && status !== 'completed') {
+    startStateTimeout()
+  } else {
+    clearStateTimeout()
+  }
+}
+
+const startStateTimeout = () => {
+  clearStateTimeout()
+  stateTimeoutTimer = setTimeout(() => {
+    console.warn('⏰ 聊天状态超时，自动重置为idle')
+    setChatState('idle', {
+      hasError: true,
+      errorMessage: '响应超时，请重试'
+    })
+    ElMessage.warning('响应超时，请重试')
+  }, stateTimeoutDuration)
+}
+
+const clearStateTimeout = () => {
+  if (stateTimeoutTimer) {
+    clearTimeout(stateTimeoutTimer)
+    stateTimeoutTimer = null
+  }
 }
 
 // 工具方法
@@ -703,6 +903,7 @@ const scrollToBottom = () => {
 // 组件销毁时清理WebSocket连接和事件监听
 onBeforeUnmount(() => {
   disconnectWebSocket()
+  clearStateTimeout()
   document.removeEventListener('visibilitychange', handleVisibilityChange)
 })
 </script>

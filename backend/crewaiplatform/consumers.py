@@ -236,7 +236,10 @@ class ChatConsumer(AsyncWebsocketConsumer):
         }))
     
     async def send_error(self, error_message):
-        """发送错误消息"""
+        """发送错误消息并清理状态"""
+        
+        # 清理所有状态
+        await self.send_thinking_status(False, '')
         
         await self.send(text_data=json.dumps({
             'type': 'error',
@@ -307,31 +310,33 @@ class ChatConsumer(AsyncWebsocketConsumer):
         """触发Agent响应（使用真实的LangChain Agent服务）"""
         
         try:
-            # 发送Agent思考状态
             agent = conversation.primary_agent
             if agent:
-                await self.channel_layer.group_send(
-                    self.conversation_group_name,
-                    {
-                        'type': 'agent_thinking',
-                        'agent_id': agent.id,
-                        'agent_name': agent.name,
-                        'is_thinking': True
-                    }
-                )
+                # 1. 发送思考状态开始
+                await self.send_thinking_status(True, '正在分析您的问题...')
                 
-                # 使用真实的SimpleAgentService处理消息，传递WebSocket消费者实例
-                from .services import SimpleAgentService
-                
-                # 直接使用WebSocket专用的处理方法
-                await SimpleAgentService.process_user_message_with_websocket(user_message, self)
-                
+                try:
+                    # 2. 使用真实的SimpleAgentService处理消息，传递WebSocket消费者实例
+                    from .services import SimpleAgentService
+                    
+                    # 直接使用WebSocket专用的处理方法
+                    await SimpleAgentService.process_user_message_with_websocket(user_message, self)
+                    
+                except Exception as e:
+                    logger.error(f"Agent处理失败: {e}")
+                    
+                    # 3. 确保在错误情况下清理状态
+                    await self.send_thinking_status(False, '')
+                    await self.send_error(f"Agent响应失败: {str(e)}")
+                    
             else:
                 # 没有配置Agent
                 await self.send_error("该会话没有配置Agent，请先选择一个Agent。")
                 
         except Exception as e:
             logger.error(f"触发Agent响应失败: {e}")
+            # 确保清理状态
+            await self.send_thinking_status(False, '')
             await self.send_error(f"Agent响应失败: {str(e)}")
     
     # WebSocket流式传输方法

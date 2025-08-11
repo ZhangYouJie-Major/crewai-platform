@@ -357,7 +357,7 @@ class SimpleAgentService:
     
     @staticmethod
     async def _call_llm(llm_model: LLMModel, prompt: str, websocket_consumer=None) -> str:
-        """使用LangChain调用LLM生成响应，支持思考过程流式输出"""
+        """统一的LLM调用方法，全部使用思考模式并保留标签"""
         
         try:
             logger.info(f"开始调用LLM: {llm_model.name} ({llm_model.provider})")
@@ -368,16 +368,16 @@ class SimpleAgentService:
                 logger.error(error_msg)
                 raise ValueError(error_msg)
             
-            logger.info(f"LLM模型可用，准备调用")
+            logger.info(f"LLM模型可用，准备调用（思考模式）")
             
-            # 对于支持思考的模型，使用流式调用
-            if llm_model.provider in ['qwen', 'moonshot'] and websocket_consumer:
-                logger.info("使用思考过程流式调用")
-                return await SimpleAgentService._call_llm_with_thinking(
+            # 统一使用思考模式的流式调用
+            if websocket_consumer:
+                logger.info("使用WebSocket思考模式流式调用")
+                return await SimpleAgentService._call_llm_with_thinking_unified(
                     llm_model, prompt, websocket_consumer
                 )
             else:
-                # 普通调用
+                # 非WebSocket调用，使用普通LangChain调用
                 logger.info("使用普通LangChain调用")
                 
                 # 使用sync_to_async包装create_langchain_model调用
@@ -406,191 +406,203 @@ class SimpleAgentService:
             raise e
     
     @staticmethod
-    async def _call_llm_with_thinking(llm_model: LLMModel, prompt: str, websocket_consumer) -> str:
-        """调用支持思考过程的LLM模型并流式输出"""
+    async def _call_llm_with_thinking_unified(llm_model: LLMModel, prompt: str, websocket_consumer) -> str:
+        """使用LangChain的结构化输出和Prompt模板进行思考模式调用"""
+        
+        from langchain_core.prompts import ChatPromptTemplate
+        from langchain_core.output_parsers import BaseOutputParser
+        from langchain_core.messages import HumanMessage, SystemMessage
+        from langchain.schema.runnable import RunnablePassthrough
+        from asgiref.sync import sync_to_async
+        import re
         
         try:
-            if llm_model.provider == 'qwen':
-                return await SimpleAgentService._call_qwen_with_thinking(
-                    llm_model, prompt, websocket_consumer
-                )
-            elif llm_model.provider == 'moonshot':
-                return await SimpleAgentService._call_moonshot_with_thinking(
-                    llm_model, prompt, websocket_consumer
+            logger.info(f"开始LangChain结构化调用: {llm_model.name}")
+            
+            # 创建LangChain模型
+            @sync_to_async
+            def create_model():
+                return llm_model.create_langchain_model()
+            
+            langchain_model = await create_model()
+            
+            # 定义结构化输出解析器
+            class ThinkingOutputParser(BaseOutputParser):
+                """解析思考过程和答案的输出解析器"""
+                
+                def parse(self, text: str) -> dict:
+                    thinking_match = re.search(r'<thinking>(.*?)</thinking>', text, re.DOTALL)
+                    answer_match = re.search(r'<answer>(.*?)</answer>', text, re.DOTALL)
+                    
+                    return {
+                        'thinking': thinking_match.group(1).strip() if thinking_match else '',
+                        'answer': answer_match.group(1).strip() if answer_match else text,
+                        'full_response': text
+                    }
+            
+            # 创建结构化提示词模板
+            system_template = """你是一个善于思考的AI助手。请在回答问题时，先展示你的思考过程，然后给出最终答案。
+
+请严格按照以下格式回答：
+
+<thinking>
+在这里写你的详细思考过程：
+- 分析问题的关键点
+- 考虑不同的角度和可能性
+- 推理和判断过程
+- 得出结论的逻辑
+</thinking>
+
+<answer>
+在这里给出简洁明了的最终答案
+</answer>
+
+注意：
+1. thinking部分要详细展示思考过程
+2. answer部分要简洁直接地回答问题
+3. 必须使用指定的XML标签格式"""
+            
+            human_template = "{input}"
+            
+            # 创建ChatPromptTemplate
+            prompt_template = ChatPromptTemplate.from_messages([
+                ("system", system_template),
+                ("human", human_template)
+            ])
+            
+            # 创建输出解析器
+            output_parser = ThinkingOutputParser()
+            
+            # 构建链式调用
+            if hasattr(langchain_model, 'astream'):  # 支持流式输出
+                logger.info("使用LangChain流式调用")
+                return await SimpleAgentService._langchain_stream_call(
+                    langchain_model, prompt_template, output_parser, prompt, websocket_consumer
                 )
             else:
-                raise ValueError(f"模型 {llm_model.provider} 不支持思考过程")
+                logger.info("使用LangChain普通调用")
+                # 普通调用
+                chain = prompt_template | langchain_model | output_parser
+                
+                # 发送思考开始信号
+                await websocket_consumer.send_thinking_status(True, "开始思考...")
+                
+                result = await chain.ainvoke({"input": prompt})
+                
+                # 处理结果
+                if result['thinking']:
+                    await websocket_consumer.send_thinking_update(result['thinking'])
+                    await websocket_consumer.send_thinking_complete(result['thinking'])
+                
+                if result['answer']:
+                    await websocket_consumer.send_answer_stream_start()
+                    await websocket_consumer.send_answer_stream_update(result['answer'])
+                    await websocket_consumer.send_answer_stream_complete(result['answer'])
+                
+                return result['full_response']
                 
         except Exception as e:
-            logger.error(f"思考过程调用失败: {e}")
-            raise e
-    
-    @staticmethod
-    async def _call_qwen_with_thinking(llm_model: LLMModel, prompt: str, websocket_consumer) -> str:
-        """调用Qwen模型获取思考过程"""
-        
-        import openai
-        import json
-        
-        try:
-            # 获取API配置
-            api_key = llm_model.get_decrypted_api_key()
-            base_url = llm_model.api_base_url or "https://dashscope.aliyuncs.com/compatible-mode/v1"
-            
-            client = openai.AsyncOpenAI(
-                api_key=api_key,
-                base_url=base_url
-            )
-            
-            # 构建支持思考的消息
-            messages = [
-                {
-                    "role": "system", 
-                    "content": "请在回答问题时展示你的思考过程。先思考，然后给出最终答案。"
-                },
-                {
-                    "role": "user", 
-                    "content": prompt
-                }
-            ]
-            
-            # 流式调用
-            stream = await client.chat.completions.create(
-                model=llm_model.model_name,
-                messages=messages,
-                temperature=llm_model.temperature,
-                max_tokens=llm_model.max_tokens or 1000,
-                stream=True
-            )
-            
-            full_response = ""
-            thinking_content = ""
-            answer_content = ""
-            is_thinking = True
-            
-            # 发送思考开始信号
-            await websocket_consumer.send_thinking_status(True, "开始思考...")
-            
-            async for chunk in stream:
-                if chunk.choices[0].delta.content:
-                    content = chunk.choices[0].delta.content
-                    full_response += content
-                    
-                    # 检测是否从思考转换到答案
-                    if "最终答案" in content or "答案是" in content or "总结" in content:
-                        if is_thinking:
-                            is_thinking = False
-                            # 发送思考完成
-                            await websocket_consumer.send_thinking_complete(thinking_content)
-                            # 开始流式输出答案
-                            await websocket_consumer.send_answer_stream_start()
-                    
-                    if is_thinking:
-                        thinking_content += content
-                        # 发送思考过程更新
-                        await websocket_consumer.send_thinking_update(thinking_content)
-                    else:
-                        answer_content += content
-                        # 发送答案流式更新
-                        await websocket_consumer.send_answer_stream_update(content)
-            
-            # 发送流式完成
-            await websocket_consumer.send_answer_stream_complete(answer_content)
-            
-            return answer_content if answer_content else full_response
-            
-        except Exception as e:
-            logger.error(f"Qwen思考过程调用失败: {e}")
+            logger.error(f"LangChain结构化调用失败: {e}")
+            import traceback
+            logger.error(f"错误堆栈: {traceback.format_exc()}")
             await websocket_consumer.send_thinking_status(False, f"思考失败: {str(e)}")
             raise e
     
     @staticmethod
-    async def _call_moonshot_with_thinking(llm_model: LLMModel, prompt: str, websocket_consumer) -> str:
-        """调用Moonshot(Kimi)模型获取思考过程"""
-        
-        import openai
+    async def _langchain_stream_call(langchain_model, prompt_template, output_parser, user_input: str, websocket_consumer) -> str:
+        """LangChain流式调用处理"""
         
         try:
-            # 获取API配置
-            api_key = llm_model.get_decrypted_api_key()
-            base_url = llm_model.api_base_url or "https://api.moonshot.cn/v1"
+            logger.info("开始LangChain流式处理")
             
-            client = openai.AsyncOpenAI(
-                api_key=api_key,
-                base_url=base_url
-            )
-            
-            # 构建支持思考的消息
-            messages = [
-                {
-                    "role": "system",
-                    "content": "你是一个善于思考的AI助手。请在回答问题时，先展示你的思考过程，然后给出最终答案。思考过程用<thinking>标签包围，最终答案用<answer>标签包围。"
-                },
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ]
-            
-            # 流式调用
-            stream = await client.chat.completions.create(
-                model=llm_model.model_name,
-                messages=messages,
-                temperature=llm_model.temperature,
-                max_tokens=llm_model.max_tokens or 1000,
-                stream=True
-            )
+            # 构建完整的提示词
+            messages = await prompt_template.aformat_messages(input=user_input)
             
             full_response = ""
-            thinking_content = ""
-            answer_content = ""
-            current_mode = "thinking"  # thinking, answer, normal
+            current_thinking_content = ""
+            current_answer_content = ""
+            in_thinking = False
+            in_answer = False
+            thinking_buffer = ""
+            answer_buffer = ""
+            answer_stream_started = False
             
             # 发送思考开始信号
-            await websocket_consumer.send_thinking_status(True, "Kimi正在思考...")
+            await websocket_consumer.send_thinking_status(True, "开始分析问题...")
             
-            async for chunk in stream:
-                if chunk.choices[0].delta.content:
-                    content = chunk.choices[0].delta.content
+            # 流式调用LangChain模型
+            async for chunk in langchain_model.astream(messages):
+                if hasattr(chunk, 'content') and chunk.content:
+                    content = chunk.content
                     full_response += content
                     
-                    # 解析标签
-                    if "<thinking>" in content:
-                        current_mode = "thinking"
-                        content = content.replace("<thinking>", "")
-                    elif "</thinking>" in content:
-                        content = content.replace("</thinking>", "")
-                        await websocket_consumer.send_thinking_complete(thinking_content)
-                        current_mode = "answer"
-                        await websocket_consumer.send_answer_stream_start()
-                    elif "<answer>" in content:
-                        current_mode = "answer"
-                        content = content.replace("<answer>", "")
-                        await websocket_consumer.send_answer_stream_start()
-                    elif "</answer>" in content:
-                        content = content.replace("</answer>", "")
-                        if content.strip():
-                            answer_content += content
-                            await websocket_consumer.send_answer_stream_update(content)
-                        break
-                    
-                    if current_mode == "thinking":
-                        thinking_content += content
-                        await websocket_consumer.send_thinking_update(thinking_content)
-                    elif current_mode == "answer":
-                        answer_content += content
-                        await websocket_consumer.send_answer_stream_update(content)
+                    # 逐字符处理，检测标签
+                    for char in content:
+                        if in_thinking:
+                            thinking_buffer += char
+                            # 检测 </thinking> 结束标签
+                            if thinking_buffer.endswith('</thinking>'):
+                                # 移除结束标签并保存思考内容
+                                current_thinking_content = thinking_buffer[:-12].strip()
+                                await websocket_consumer.send_thinking_complete(current_thinking_content)
+                                in_thinking = False
+                                thinking_buffer = ""
+                            else:
+                                # 实时更新思考内容
+                                clean_thinking = thinking_buffer.replace('</thinking>', '').strip()
+                                if clean_thinking:
+                                    await websocket_consumer.send_thinking_update(clean_thinking)
+                        
+                        elif in_answer:
+                            answer_buffer += char
+                            # 检测 </answer> 结束标签
+                            if answer_buffer.endswith('</answer>'):
+                                # 移除结束标签并保存答案内容
+                                current_answer_content = answer_buffer[:-9].strip()
+                                in_answer = False
+                                break  # 答案结束，停止处理
+                            else:
+                                # 实时更新答案内容
+                                clean_answer = answer_buffer.replace('</answer>', '').strip()
+                                # 推送累计的已解析答案内容，前端可直接覆盖展示
+                                if not answer_stream_started:
+                                    await websocket_consumer.send_answer_stream_start()
+                                    answer_stream_started = True
+                                await websocket_consumer.send_answer_stream_update(clean_answer)
+                        
+                        else:
+                            # 检测开始标签
+                            if full_response.endswith('<thinking>'):
+                                in_thinking = True
+                                thinking_buffer = ""
+                            elif full_response.endswith('<answer>'):
+                                in_answer = True
+                                answer_buffer = ""
+                                await websocket_consumer.send_answer_stream_start()
+                                answer_stream_started = True
+            
+            # 使用输出解析器解析完整响应
+            parsed_result = output_parser.parse(full_response)
+
+            # 如果流式处理中没有正确识别答案，使用更稳健的提取逻辑
+            final_answer = current_answer_content or SimpleAgentService._extract_answer_content(parsed_result['full_response'])
             
             # 发送流式完成
-            await websocket_consumer.send_answer_stream_complete(answer_content)
+            if final_answer and not answer_stream_started:
+                # 补发开始事件，确保前端有承接消息
+                await websocket_consumer.send_answer_stream_start()
+                answer_stream_started = True
+            await websocket_consumer.send_answer_stream_complete(final_answer)
             
-            return answer_content if answer_content else full_response
+            logger.info(f"LangChain流式调用完成，响应长度: {len(full_response)}")
+            return full_response
             
         except Exception as e:
-            logger.error(f"Moonshot思考过程调用失败: {e}")
-            await websocket_consumer.send_thinking_status(False, f"思考失败: {str(e)}")
+            logger.error(f"LangChain流式调用失败: {e}")
+            import traceback
+            logger.error(f"错误堆栈: {traceback.format_exc()}")
             raise e
-    
+
     @staticmethod
     async def _generate_test_response(llm_model: LLMModel, prompt: str) -> str:
         """生成智能的测试响应"""
@@ -739,7 +751,15 @@ class SimpleAgentService:
             
             @sync_to_async
             def update_message(message, new_content, error_status, error_msg=None):
-                message.content = new_content
+                # 存储时仅保存最终答案内容，去除<thinking>/<answer>标签，避免刷新后看到原始标签
+                if not error_status and isinstance(new_content, str):
+                    try:
+                        final_answer_only = SimpleAgentService._extract_answer_content(new_content)
+                    except Exception:
+                        final_answer_only = new_content
+                    message.content = final_answer_only
+                else:
+                    message.content = new_content
                 message.status = 'failed' if error_status else 'completed'
                 if error_status:
                     message.error_message = error_msg or new_content
@@ -846,3 +866,147 @@ class MockAgentService:
             return ChatMessageService.create_system_message(
                 user_message.conversation, f"模拟Agent处理错误: {str(e)}"
             )
+# 将扩展方法添加到SimpleAgentService类
+async def _process_langchain_stream(langchain_model, messages, websocket_consumer) -> str:
+    """处理LangChain流式响应"""
+    
+    try:
+        full_response = ""
+        current_thinking_content = ""
+        current_answer_content = ""
+        in_thinking = False
+        in_answer = False
+        thinking_buffer = ""
+        answer_buffer = ""
+        
+        # 发送思考开始信号
+        await websocket_consumer.send_thinking_status(True, "开始思考...")
+        
+        # 使用LangChain的流式输出
+        async for chunk in langchain_model.astream(messages):
+            if hasattr(chunk, 'content') and chunk.content:
+                content = chunk.content
+            elif isinstance(chunk, str):
+                content = chunk
+            else:
+                continue
+            
+            full_response += content
+            
+            # 逐字符处理，检测标签
+            for char in content:
+                if in_thinking:
+                    thinking_buffer += char
+                    # 检测 </thinking> 结束标签
+                    if thinking_buffer.endswith('</thinking>'):
+                        # 移除结束标签并保存思考内容
+                        current_thinking_content = thinking_buffer[:-12]  # 移除 </thinking>
+                        await websocket_consumer.send_thinking_complete(current_thinking_content)
+                        in_thinking = False
+                        thinking_buffer = ""
+                    else:
+                        # 实时更新思考内容
+                        clean_thinking = thinking_buffer.replace('</thinking>', '')
+                        await websocket_consumer.send_thinking_update(clean_thinking)
+                
+                elif in_answer:
+                    answer_buffer += char
+                    # 检测 </answer> 结束标签
+                    if answer_buffer.endswith('</answer>'):
+                        # 移除结束标签并保存答案内容
+                        current_answer_content = answer_buffer[:-9]  # 移除 </answer>
+                        in_answer = False
+                        break  # 答案结束，停止处理
+                    else:
+                        # 实时更新答案内容
+                        await websocket_consumer.send_answer_stream_update(char)
+                
+                else:
+                    # 检测开始标签
+                    if full_response.endswith('<thinking>'):
+                        in_thinking = True
+                        thinking_buffer = ""
+                    elif full_response.endswith('<answer>'):
+                        in_answer = True
+                        answer_buffer = ""
+                        await websocket_consumer.send_answer_stream_start()
+        
+        # 发送流式完成
+        final_answer = current_answer_content if current_answer_content else full_response
+        await websocket_consumer.send_answer_stream_complete(final_answer)
+        
+        # 返回完整响应（保留标签）
+        return full_response
+        
+    except Exception as e:
+        logger.error(f"LangChain流式处理失败: {e}")
+        raise e
+
+async def _process_langchain_response(langchain_model, messages, websocket_consumer) -> str:
+    """处理LangChain普通响应"""
+    
+    try:
+        # 发送思考开始信号
+        await websocket_consumer.send_thinking_status(True, "开始思考...")
+        
+        # 使用LangChain调用
+        response = await langchain_model.ainvoke(messages)
+        full_response = response.content if hasattr(response, 'content') else str(response)
+        
+        # 解析响应中的thinking和answer部分
+        thinking_match = _extract_thinking_content(full_response)
+        answer_match = _extract_answer_content(full_response)
+        
+        if thinking_match:
+            # 发送思考内容
+            await websocket_consumer.send_thinking_update(thinking_match)
+            await websocket_consumer.send_thinking_complete(thinking_match)
+        
+        if answer_match:
+            # 发送答案内容
+            await websocket_consumer.send_answer_stream_start()
+            # 模拟流式输出效果
+            import asyncio
+            for i in range(0, len(answer_match), 10):
+                chunk = answer_match[i:i+10]
+                await websocket_consumer.send_answer_stream_update(chunk)
+                await asyncio.sleep(0.05)  # 模拟流式延迟
+            
+            await websocket_consumer.send_answer_stream_complete(answer_match)
+        else:
+            # 如果没有answer标签，就把整个响应作为答案
+            await websocket_consumer.send_answer_stream_start()
+            await websocket_consumer.send_answer_stream_complete(full_response)
+        
+        return full_response
+        
+    except Exception as e:
+        logger.error(f"LangChain普通响应处理失败: {e}")
+        raise e
+
+def _extract_thinking_content(content: str) -> str:
+    """提取<thinking>标签内的内容"""
+    import re
+    match = re.search(r'<thinking>(.*?)</thinking>', content, re.DOTALL)
+    return match.group(1).strip() if match else ""
+
+def _extract_answer_content(content: str) -> str:
+    """提取<answer>标签内的内容；若不存在，剥离<thinking>块并返回剩余内容"""
+    import re
+    if not content:
+        return ""
+    # 优先提取<answer>
+    answer_match = re.search(r'<answer[^>]*>([\s\S]*?)</answer>', content, re.IGNORECASE)
+    if answer_match:
+        return answer_match.group(1).strip()
+    # 无<answer>时，移除<thinking>块
+    stripped = re.sub(r'<thinking[^>]*>[\s\S]*?</thinking>', '', content, flags=re.IGNORECASE).strip()
+    # 去除可能残留的<answer>标签外壳
+    stripped = re.sub(r'</?answer[^>]*>', '', stripped, flags=re.IGNORECASE).strip()
+    return stripped if stripped else content
+
+# 将方法绑定到SimpleAgentService类
+SimpleAgentService._process_langchain_stream = staticmethod(_process_langchain_stream)
+SimpleAgentService._process_langchain_response = staticmethod(_process_langchain_response)  
+SimpleAgentService._extract_thinking_content = staticmethod(_extract_thinking_content)
+SimpleAgentService._extract_answer_content = staticmethod(_extract_answer_content)
